@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import org.apache.thrift.TException;
 
 import java.util.Map;
-import java.util.Optional;
 
 @RequiredArgsConstructor
 public class TokenKeeperHandler implements TokenKeeperSrv.Iface {
@@ -21,7 +20,7 @@ public class TokenKeeperHandler implements TokenKeeperSrv.Iface {
     @Override
     public AuthData create(Scope scope, Map<String, String> metadata, String subjectId, String realm) throws TException {
         AuthData authData = authDataFactory.create(scope, metadata, subjectId, realm);
-        authDataRepository.save(authData);
+        authDataRepository.create(authData);
         return authData;
     }
 
@@ -35,26 +34,25 @@ public class TokenKeeperHandler implements TokenKeeperSrv.Iface {
     public AuthData getByToken(String jwe) throws TException {
         AuthData authData = jweTokenGenerator.decode(jwe);
         if (Strings.isNullOrEmpty(authData.getExpTime())) {
-            authData = authDataRepository.get(authData.id);
-        } else {
-            authData.setToken(jwe);
+            return authDataRepository.get(authData.id)
+                    .orElseThrow(AuthDataNotFound::new);
         }
-        return Optional.ofNullable(authData)
-                .orElseThrow(AuthDataNotFound::new);
+        authData.setToken(jwe);
+        return authData;
     }
 
     @Override
     public AuthData get(String tokenId) throws TException {
-        return Optional.ofNullable(authDataRepository.get(tokenId))
+        return authDataRepository.get(tokenId)
                 .orElseThrow(AuthDataNotFound::new);
     }
 
     @Override
     public void revoke(String tokenId) throws TException {
-        AuthData authData = Optional.ofNullable(authDataRepository.get(tokenId))
+        AuthData authData = authDataRepository.get(tokenId)
                 .orElseThrow(AuthDataNotFound::new);
         authData.setStatus(AuthDataStatus.revoked);
-        authDataRepository.save(authData);
+        authDataRepository.update(authData);
     }
 
 }

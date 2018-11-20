@@ -14,7 +14,7 @@ import com.rbkmoney.token.keeper.exception.TokenEncryptionException;
 import lombok.extern.slf4j.Slf4j;
 import net.minidev.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -23,7 +23,7 @@ import java.text.ParseException;
 import java.util.Base64;
 
 @Slf4j
-@Component
+@Service
 public class JweTokenGeneratorImpl implements JweTokenGenerator<AuthData> {
 
     private static final ObjectMapper om = new ObjectMapper();

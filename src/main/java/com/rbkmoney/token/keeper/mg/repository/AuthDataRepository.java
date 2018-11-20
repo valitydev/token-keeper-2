@@ -1,12 +1,15 @@
 package com.rbkmoney.token.keeper.mg.repository;
 
 import com.rbkmoney.token.keeper.AuthData;
-import com.rbkmoney.token.keeper.AuthDataNotFound;
+
+import java.util.Optional;
 
 public interface AuthDataRepository {
 
-    void save(AuthData data);
+    void create(AuthData data);
 
-    AuthData get(String id) throws AuthDataNotFound;
+    void update(AuthData data);
+
+    Optional<AuthData> get(String id);
 
 }

@@ -19,6 +19,7 @@ import org.springframework.test.context.junit4.SpringRunner;
 
 import java.net.URI;
 import java.util.HashMap;
+import java.util.Optional;
 
 import static org.junit.Assert.*;
 import static org.mockito.Matchers.any;
@@ -72,8 +73,8 @@ public class TokenKeeperApplicationTest {
         THClientBuilder clientBuilder = new THClientBuilder()
                 .withAddress(new URI(getServiceUrl()));
         client = clientBuilder.build(TokenKeeperSrv.Iface.class);
-        when(authDataRepository.get(TEST_ID)).thenReturn(AUTH_DATA);
-        doNothing().when(authDataRepository).save(any());
+        when(authDataRepository.get(TEST_ID)).thenReturn(Optional.of(AUTH_DATA));
+        doNothing().when(authDataRepository).create(any());
     }
 
     @Test
@@ -95,9 +96,9 @@ public class TokenKeeperApplicationTest {
 
     private void revokeTest() throws TException {
         reset(authDataRepository);
-        when(authDataRepository.get(any())).thenReturn(AUTH_DATA);
+        when(authDataRepository.get(any())).thenReturn(Optional.of(AUTH_DATA));
         client.revoke(TEST_ID);
-        verify(authDataRepository).save(authDataCaptor.capture());
+        verify(authDataRepository).update(authDataCaptor.capture());
         assertEquals(AuthDataStatus.revoked, authDataCaptor.getValue().status);
     }
 
@@ -105,7 +106,7 @@ public class TokenKeeperApplicationTest {
         AuthData authData = client.create(scope, new HashMap<>(), TEST_SUBJECT_ID, TEST_REALM);
         assertCommonAuthData(authData);
         assertTrue(Strings.isNullOrEmpty(authData.exp_time));
-        verify(authDataRepository, times(1)).save(any());
+        verify(authDataRepository, times(1)).create(any());
     }
 
     private void createWithExpirationTest(Scope scope) throws TException {
@@ -123,7 +124,7 @@ public class TokenKeeperApplicationTest {
         AuthData authData = client.getByToken(TEST_TOKEN_WITH_EXP);
         assertEquals(TEST_TOKEN_ID_NEW, authData.id);
 
-        when(authDataRepository.get(TEST_TOKEN_ID_NEW_2)).thenReturn(AUTH_DATA);
+        when(authDataRepository.get(TEST_TOKEN_ID_NEW_2)).thenReturn(Optional.of(AUTH_DATA));
         authData = client.getByToken(TEST_TOKEN);
         verify(authDataRepository, times(1)).get(TEST_TOKEN_ID_NEW_2);
         assertEquals(TEST_ID, authData.id);
