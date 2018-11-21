@@ -22,6 +22,9 @@ import java.io.IOException;
 import java.text.ParseException;
 import java.util.Base64;
 
+/**
+ * @author k.struzhkin on 11/21/18
+ */
 @Slf4j
 @Service
 public class JweTokenGeneratorImpl implements JweTokenGenerator<AuthData> {

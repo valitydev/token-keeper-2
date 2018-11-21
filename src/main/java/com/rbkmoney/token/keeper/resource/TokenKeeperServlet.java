@@ -9,9 +9,8 @@ import javax.servlet.annotation.WebServlet;
 import java.io.IOException;
 
 /**
- * Created by vpankrashkin on 30.06.16.
+ * @author k.struzhkin on 11/21/18
  */
-
 @WebServlet("/token_keeper")
 @RequiredArgsConstructor
 public class TokenKeeperServlet extends GenericServlet {

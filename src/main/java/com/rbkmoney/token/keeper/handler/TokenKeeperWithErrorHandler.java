@@ -14,6 +14,9 @@ import java.util.Map;
 
 import static com.rbkmoney.token.keeper.util.ParametersChecker.checkBadParameters;
 
+/**
+ * @author k.struzhkin on 11/21/18
+ */
 @Slf4j
 public class TokenKeeperWithErrorHandler extends TokenKeeperHandler {
 

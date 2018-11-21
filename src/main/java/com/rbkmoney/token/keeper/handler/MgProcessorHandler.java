@@ -10,7 +10,9 @@ import com.rbkmoney.token.keeper.AuthData;
 import java.util.Collections;
 import java.util.List;
 
-
+/**
+ * @author k.struzhkin on 11/21/18
+ */
 public class MgProcessorHandler extends AbstractProcessorHandler<AuthData, AuthData> {
 
     public MgProcessorHandler(Class<AuthData> argsType, Class<AuthData> resultType) {
@@ -24,8 +26,7 @@ public class MgProcessorHandler extends AbstractProcessorHandler<AuthData, AuthD
 
     @Override
     protected SignalResultData<AuthData> processSignalTimeout(String s, String s1, List<TMachineEvent<AuthData>> list) {
-        //not use in this service
-        return null;
+        return new SignalResultData<>(Collections.emptyList(), new ComplexAction());
     }
 
     @Override
