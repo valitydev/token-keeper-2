@@ -8,9 +8,6 @@ import javax.servlet.*;
 import javax.servlet.annotation.WebServlet;
 import java.io.IOException;
 
-/**
- * @author k.struzhkin on 11/21/18
- */
 @WebServlet("/mg_processor")
 @RequiredArgsConstructor
 public class MgProcessorServlet extends GenericServlet {

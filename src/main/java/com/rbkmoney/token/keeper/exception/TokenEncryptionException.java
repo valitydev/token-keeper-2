@@ -1,8 +1,5 @@
 package com.rbkmoney.token.keeper.exception;
 
-/**
- * @author k.struzhkin on 11/21/18
- */
 public class TokenEncryptionException extends RuntimeException {
 
     public TokenEncryptionException() {

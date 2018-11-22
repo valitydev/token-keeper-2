@@ -18,8 +18,6 @@ public class EncryptedJwtTest {
         String jwe = jwtTokenGenerator.generate(withoutExpDate);
         AuthData decode = jwtTokenGenerator.decode(jwe);
         Assert.assertEquals(TEST, decode.id);
-
-        log.info(jwe);
     }
 
 }

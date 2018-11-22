@@ -10,9 +10,6 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * @author k.struzhkin on 11/21/18
- */
 @Component
 @RequiredArgsConstructor
 public class AuthDataFactory {

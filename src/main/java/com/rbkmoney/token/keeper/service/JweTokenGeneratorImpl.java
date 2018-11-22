@@ -22,9 +22,6 @@ import java.io.IOException;
 import java.text.ParseException;
 import java.util.Base64;
 
-/**
- * @author k.struzhkin on 11/21/18
- */
 @Slf4j
 @Service
 public class JweTokenGeneratorImpl implements JweTokenGenerator<AuthData> {
@@ -32,10 +29,10 @@ public class JweTokenGeneratorImpl implements JweTokenGenerator<AuthData> {
     private static final ObjectMapper om = new ObjectMapper();
     private static final String AUTH_DATA = "authData";
 
-    private final String secreteKey;
+    private final String secretKey;
 
     public JweTokenGeneratorImpl(@Value("${jwe.secrete.key}") String secreteKey) {
-        this.secreteKey = secreteKey;
+        this.secretKey = secreteKey;
     }
 
     @Override
@@ -46,7 +43,7 @@ public class JweTokenGeneratorImpl implements JweTokenGenerator<AuthData> {
                     .build();
             JWEHeader header = new JWEHeader(JWEAlgorithm.A256GCMKW, EncryptionMethod.A256GCM);
             EncryptedJWT jwt = new EncryptedJWT(header, jwtClaims);
-            byte[] decodedKey = Base64.getDecoder().decode(secreteKey);
+            byte[] decodedKey = Base64.getDecoder().decode(secretKey);
             SecretKey originalKey = new SecretKeySpec(decodedKey, 0, decodedKey.length, "AES");
             AESEncrypter encrypter = new AESEncrypter(originalKey);
             jwt.encrypt(encrypter);
@@ -60,7 +57,7 @@ public class JweTokenGeneratorImpl implements JweTokenGenerator<AuthData> {
     @Override
     public AuthData decode(String jwe) {
         try {
-            byte[] decodedKey = Base64.getDecoder().decode(secreteKey);
+            byte[] decodedKey = Base64.getDecoder().decode(secretKey);
             EncryptedJWT parse = EncryptedJWT.parse(jwe);
             AESDecrypter aesDecrypter = new AESDecrypter(decodedKey);
             parse.decrypt(aesDecrypter);

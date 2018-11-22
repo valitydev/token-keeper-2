@@ -15,9 +15,6 @@ import org.springframework.core.io.Resource;
 
 import java.io.IOException;
 
-/**
- * @author k.struzhkin on 11/21/18
- */
 @Configuration
 public class MgConfig {
 

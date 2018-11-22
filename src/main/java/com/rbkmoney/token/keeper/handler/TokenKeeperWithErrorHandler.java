@@ -14,9 +14,6 @@ import java.util.Map;
 
 import static com.rbkmoney.token.keeper.util.ParametersChecker.checkBadParameters;
 
-/**
- * @author k.struzhkin on 11/21/18
- */
 @Slf4j
 public class TokenKeeperWithErrorHandler extends TokenKeeperHandler {
 
@@ -27,7 +24,10 @@ public class TokenKeeperWithErrorHandler extends TokenKeeperHandler {
     @Override
     public AuthData create(Scope scope, Map<String, String> metadata, String subjectId, String realm) throws TException {
         try {
-            return super.create(scope, metadata, subjectId, realm);
+            log.info("Request create scope: {} metadata: {} subjectId: {} realm: {}", scope, metadata, subjectId, realm);
+            AuthData authData = super.create(scope, metadata, subjectId, realm);
+            log.info("Response: {}", authData);
+            return authData;
         } catch (TokenEncryptionException e) {
             log.error("Error when create e: ", e);
             throw new TException(e.getMessage());
@@ -41,8 +41,12 @@ public class TokenKeeperWithErrorHandler extends TokenKeeperHandler {
     public AuthData createWithExpiration(Scope scope, Map<String, String> metadata, String subjectId, String realm,
                                          String expirationTime) throws TException {
         try {
+            log.info("Request createWithExpiration scope: {} metadata: {} subjectId: {} realm: {} expirationTime: {}",
+                    scope, metadata, subjectId, realm, expirationTime);
             checkBadParameters(expirationTime, "Bad request parameters, expiration required and not empty arg!");
-            return super.createWithExpiration(scope, metadata, subjectId, realm, expirationTime);
+            AuthData authData = super.createWithExpiration(scope, metadata, subjectId, realm, expirationTime);
+            log.info("Response: {}", authData);
+            return authData;
         } catch (TokenEncryptionException e) {
             log.error("Error when createWithExpiration e: ", e);
             throw new TException(e.getMessage());
@@ -55,8 +59,11 @@ public class TokenKeeperWithErrorHandler extends TokenKeeperHandler {
     @Override
     public AuthData getByToken(String jwe) throws TException {
         try {
+            log.info("Request getByToken jwe: {}", jwe);
             checkBadParameters(jwe, "Bad request parameters, jwe required and not empty arg!");
-            return super.getByToken(jwe);
+            AuthData authData = super.getByToken(jwe);
+            log.info("Response: {}", authData);
+            return authData;
         } catch (TokenEncryptionException e) {
             log.error("Error when getByToken e: ", e);
             throw new TException(e.getMessage());
@@ -72,8 +79,11 @@ public class TokenKeeperWithErrorHandler extends TokenKeeperHandler {
     @Override
     public AuthData get(String tokenId) throws TException {
         try {
+            log.info("Request get tokenId: {}", tokenId);
             checkBadParameters(tokenId, "Bad request parameters, tokenId required and not empty arg!");
-            return super.get(tokenId);
+            AuthData authData = super.get(tokenId);
+            log.info("Response: {}", authData);
+            return authData;
         } catch (AuthDataNotFound e) {
             log.error("Error when get. Can't find data by this parameters tokenId: {} e: ", tokenId, e);
             throw new AuthDataNotFound(e);
@@ -86,8 +96,10 @@ public class TokenKeeperWithErrorHandler extends TokenKeeperHandler {
     @Override
     public void revoke(String tokenId) throws TException {
         try {
+            log.info("Request revoke tokenId: {}", tokenId);
             checkBadParameters(tokenId, "Bad request parameters, tokenId required and not empty arg!");
             super.revoke(tokenId);
+            log.info("Revoked tokenId: {}", tokenId);
         } catch (AuthDataNotFound e) {
             log.error("Error when revoke. Can't find data by this parameters tokenId: {} e: ", tokenId, e);
             throw new AuthDataNotFound(e);

@@ -10,9 +10,6 @@ import org.apache.thrift.TException;
 
 import java.util.Map;
 
-/**
- * @author k.struzhkin on 11/21/18
- */
 @RequiredArgsConstructor
 public class TokenKeeperHandler implements TokenKeeperSrv.Iface {
 

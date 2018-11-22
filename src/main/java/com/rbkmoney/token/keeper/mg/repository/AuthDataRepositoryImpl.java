@@ -9,9 +9,6 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * @author k.struzhkin on 11/21/18
- */
 @Service
 @RequiredArgsConstructor
 public class AuthDataRepositoryImpl implements AuthDataRepository {
