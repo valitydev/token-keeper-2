@@ -63,7 +63,7 @@ public class TokenKeeperApplicationTest {
     @LocalServerPort
     int serverPort;
 
-    private static String SERVICE_URL = "http://localhost:%s/token_keeper";
+    private static String SERVICE_URL = "http://localhost:%s/v1/token_keeper";
 
     @MockBean
     private AuthDataRepository authDataRepository;
