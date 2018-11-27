@@ -8,7 +8,7 @@ import javax.servlet.*;
 import javax.servlet.annotation.WebServlet;
 import java.io.IOException;
 
-@WebServlet("/token_keeper")
+@WebServlet("/v1/token_keeper")
 @RequiredArgsConstructor
 public class TokenKeeperServlet extends GenericServlet {
 
