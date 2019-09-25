@@ -24,6 +24,7 @@
         <mg.service.url>http://localhost:8080/v1/automaton</mg.service.url>
 
         <dockerfile.base.service.tag>22c57470c4fc47161894f036b7cf9d70f42b75f5</dockerfile.base.service.tag>
+        <dockerfile.registry>${env.REGISTRY}</dockerfile.registry>
         <damsel.version>1.234-5b4e65d</damsel.version>
         <geck.version>0.6.7</geck.version>
         <shared.resources.version>0.3.6</shared.resources.version>
