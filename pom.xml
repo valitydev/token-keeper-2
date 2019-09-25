@@ -17,6 +17,7 @@
     <properties>
         <project.maintainer>Konstantin Struzhkin &lt;k.struzhkin@rbkmoney.com&gt;</project.maintainer>
         <server.port>8022</server.port>
+        <exposed.ports>${server.port} ${server.port}</exposed.ports>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <jwe.secrete.key>2C+kMbFi7DrV0wsIR0KQ81RbkylqMOdqNNHV1loJ4Bg=</jwe.secrete.key>
