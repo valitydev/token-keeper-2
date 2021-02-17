@@ -1,0 +1,21 @@
+{application, token_keeper, [
+    {description, "Keeps tokens"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {token_keeper, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        genlib,
+        woody,
+        jose,
+        token_keeper_proto,
+        bouncer_client,
+        how_are_you,
+        erl_health
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache 2.0"]},
+    {links, []}
+]}.
