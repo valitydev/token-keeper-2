@@ -6,7 +6,7 @@
 %% API
 
 -export([issue/3]).
--export([verify/1]).
+-export([verify/2]).
 
 -export([get_token_id/1]).
 -export([get_subject_id/1]).
@@ -15,7 +15,9 @@
 -export([get_claims/1]).
 -export([get_claim/2]).
 -export([get_claim/3]).
+-export([get_authority/1]).
 -export([get_metadata/1]).
+-export([get_source_context/1]).
 
 -export([create_claims/2]).
 -export([set_subject_email/2]).
@@ -27,7 +29,7 @@
 
 %% API types
 
--type t() :: {token_id(), claims(), metadata()}.
+-type t() :: {token_id(), claims(), authority(), metadata()}.
 -type claim() :: expiration() | term().
 -type claims() :: #{binary() => claim()}.
 -type token() :: binary().
@@ -38,14 +40,8 @@
     keyset => keyset()
 }.
 
-%@TODO Separate classification parameters from jwt decoder logic
--type auth_method() ::
-    user_session_token | api_key_token | detect.
 -type metadata() :: #{
-    authority := binary(),
-    metadata_ns => binary(),
-    auth_method => auth_method(),
-    user_realm => realm()
+    source_context => source_context()
 }.
 
 -export_type([t/0]).
@@ -54,7 +50,6 @@
 -export_type([token/0]).
 -export_type([expiration/0]).
 -export_type([metadata/0]).
--export_type([auth_method/0]).
 -export_type([options/0]).
 
 %% Internal types
@@ -66,19 +61,22 @@
 -type subject_id() :: binary().
 -type token_id() :: binary().
 
+-type authority() :: atom().
+
+%??
+-type source_context() :: tk_extractor_detect_token:token_source().
+
 -type keyset() :: #{
     keyname() => key_opts()
 }.
 
 -type key_opts() :: #{
     source := keysource(),
-    metadata => metadata()
+    authority := authority()
 }.
 
 -type keysource() ::
     {pem_file, file:filename()}.
-
--type realm() :: binary().
 
 %%
 
@@ -92,7 +90,7 @@
 %%
 
 -spec get_token_id(t()) -> token_id().
-get_token_id({TokenId, _Claims, _Metadata}) ->
+get_token_id({TokenId, _Claims, _Authority, _Metadata}) ->
     TokenId.
 
 -spec get_subject_id(t()) -> subject_id() | undefined.
@@ -104,27 +102,35 @@ get_subject_email(T) ->
     get_claim(?CLAIM_SUBJECT_EMAIL, T, undefined).
 
 -spec get_expires_at(t()) -> expiration().
-get_expires_at({_TokenId, Claims, _Metadata}) ->
+get_expires_at({_TokenId, Claims, _Authority, _Metadata}) ->
     case maps:get(?CLAIM_EXPIRES_AT, Claims) of
         0 -> unlimited;
         V -> V
     end.
 
 -spec get_claims(t()) -> claims().
-get_claims({_TokenId, Claims, _Metadata}) ->
+get_claims({_TokenId, Claims, _Authority, _Metadata}) ->
     Claims.
 
 -spec get_claim(binary(), t()) -> claim().
-get_claim(ClaimName, {_TokenId, Claims, _Metadata}) ->
+get_claim(ClaimName, {_TokenId, Claims, _Authority, _Metadata}) ->
     maps:get(ClaimName, Claims).
 
 -spec get_claim(binary(), t(), claim()) -> claim().
-get_claim(ClaimName, {_TokenId, Claims, _Metadata}, Default) ->
+get_claim(ClaimName, {_TokenId, Claims, _Authority, _Metadata}, Default) ->
     maps:get(ClaimName, Claims, Default).
 
+-spec get_authority(t()) -> authority().
+get_authority({_TokenId, _Claims, Authority, _Metadata}) ->
+    Authority.
+
 -spec get_metadata(t()) -> metadata().
-get_metadata({_TokenId, _Claims, Metadata}) ->
+get_metadata({_TokenId, _Claims, _Authority, Metadata}) ->
     Metadata.
+
+-spec get_source_context(t()) -> source_context().
+get_source_context({_TokenId, _Claims, _Authority, Metadata}) ->
+    maps:get(source_context, Metadata).
 
 -spec create_claims(claims(), expiration()) -> claims().
 create_claims(Claims, Expiration) ->
@@ -182,7 +188,7 @@ sign(#{kid := KID, jwk := JWK, signer := #{} = JWS}, Claims) ->
 
 %%
 
--spec verify(token()) ->
+-spec verify(token(), source_context()) ->
     {ok, t()}
     | {error,
         {invalid_token,
@@ -193,14 +199,14 @@ sign(#{kid := KID, jwk := JWK, signer := #{} = JWS}, Claims) ->
         | {invalid_operation, term()}
         | invalid_signature}.
 
-verify(Token) ->
+verify(Token, SourceContext) ->
     try
         {_, ExpandedToken} = jose_jws:expand(Token),
         #{<<"protected">> := ProtectedHeader} = ExpandedToken,
         Header = base64url_to_map(ProtectedHeader),
         Alg = get_alg(Header),
         KID = get_kid(Header),
-        verify(KID, Alg, ExpandedToken)
+        verify(KID, Alg, ExpandedToken, SourceContext)
     catch
         %% from get_alg and get_kid
         throw:Reason ->
@@ -214,20 +220,23 @@ base64url_to_map(Base64) when is_binary(Base64) ->
     {ok, Json} = jose_base64url:decode(Base64),
     jsx:decode(Json, [return_maps]).
 
-verify(KID, Alg, ExpandedToken) ->
+verify(KID, Alg, ExpandedToken, SourceContext) ->
     case get_key_by_kid(KID) of
-        #{jwk := JWK, verifier := Algs, metadata := Metadata} ->
+        #{jwk := JWK, verifier := Algs, authority := Authority} ->
             _ = lists:member(Alg, Algs) orelse throw({invalid_operation, Alg}),
-            verify_with_key(JWK, ExpandedToken, Metadata);
+            verify_with_key(JWK, ExpandedToken, Authority, make_metadata(SourceContext));
         undefined ->
             {error, {nonexistent_key, KID}}
     end.
 
-verify_with_key(JWK, ExpandedToken, Metadata) ->
+make_metadata(SourceContext) ->
+    #{source_context => SourceContext}.
+
+verify_with_key(JWK, ExpandedToken, Authority, Metadata) ->
     case jose_jwt:verify(JWK, ExpandedToken) of
         {true, #jose_jwt{fields = Claims}, _JWS} ->
             _ = validate_claims(Claims),
-            get_result(Claims, Metadata);
+            get_result(Claims, Authority, Metadata);
         {false, _JWT, _JWS} ->
             {error, invalid_signature}
     end.
@@ -241,8 +250,8 @@ validate_claims(Claims, [{Name, Claim, Validator} | Rest]) ->
 validate_claims(Claims, []) ->
     Claims.
 
-get_result(#{?CLAIM_TOKEN_ID := TokenID} = Claims, Metadata) ->
-    {ok, {TokenID, maps:without([?CLAIM_TOKEN_ID], Claims), Metadata}}.
+get_result(#{?CLAIM_TOKEN_ID := TokenID} = Claims, Authority, Metadata) ->
+    {ok, {TokenID, maps:without([?CLAIM_TOKEN_ID], Claims), Authority, Metadata}}.
 
 get_kid(#{<<"kid">> := KID}) when is_binary(KID) ->
     KID;
@@ -284,26 +293,13 @@ parse_options(Options) ->
     _ = is_map(Keyset) orelse exit({invalid_option, keyset, Keyset}),
     _ = genlib_map:foreach(
         fun(KeyName, KeyOpts = #{source := Source}) ->
-            Metadata = maps:get(metadata, KeyOpts),
-            Authority = maps:get(authority, Metadata),
-            AuthMethod = maps:get(auth_method, Metadata, undefined),
-            UserRealm = maps:get(user_realm, Metadata, <<>>),
-            MetadataNS = maps:get(metadata_ns, Metadata, <<>>),
+            Authority = maps:get(authority, KeyOpts),
             _ =
                 is_keysource(Source) orelse
                     exit({invalid_source, KeyName, Source}),
             _ =
-                is_auth_method(AuthMethod) orelse
-                    exit({invalid_auth_method, KeyName, AuthMethod}),
-            _ =
-                is_binary(UserRealm) orelse
-                    exit({invalid_user_realm, KeyName, AuthMethod}),
-            _ =
-                is_binary(Authority) orelse
-                    exit({invalid_authority, KeyName, AuthMethod}),
-            _ =
-                is_binary(MetadataNS) orelse
-                    exit({invalid_metadata_ns, KeyName, MetadataNS})
+                is_atom(Authority) orelse
+                    exit({invalid_authority, KeyName, Authority})
         end,
         Keyset
     ),
@@ -312,17 +308,6 @@ parse_options(Options) ->
 is_keysource({pem_file, Fn}) ->
     is_list(Fn) orelse is_binary(Fn);
 is_keysource(_) ->
-    false.
-
-is_auth_method(user_session_token) ->
-    true;
-is_auth_method(api_key_token) ->
-    true;
-is_auth_method(detect) ->
-    true;
-is_auth_method(undefined) ->
-    true;
-is_auth_method(_) ->
     false.
 
 %%
@@ -335,17 +320,17 @@ init(Keyset) ->
 
 ensure_store_key(KeyName, KeyOpts) ->
     Source = maps:get(source, KeyOpts),
-    Metadata = maps:get(metadata, KeyOpts, #{}),
-    case store_key(KeyName, Source, Metadata) of
+    Authority = maps:get(authority, KeyOpts),
+    case store_key(KeyName, Source, Authority) of
         ok ->
             ok;
         {error, Reason} ->
             exit({import_error, KeyName, Source, Reason})
     end.
 
--spec store_key(keyname(), {pem_file, file:filename()}, metadata()) -> ok | {error, file:posix() | {unknown_key, _}}.
-store_key(Keyname, {pem_file, Filename}, Metadata) ->
-    store_key(Keyname, {pem_file, Filename}, Metadata, #{
+-spec store_key(keyname(), {pem_file, file:filename()}, authority()) -> ok | {error, file:posix() | {unknown_key, _}}.
+store_key(Keyname, {pem_file, Filename}, Authority) ->
+    store_key(Keyname, {pem_file, Filename}, Authority, #{
         kid => fun derive_kid_from_public_key_pem_entry/1
     }).
 
@@ -359,13 +344,13 @@ derive_kid_from_public_key_pem_entry(JWK) ->
     kid => fun((key()) -> kid())
 }.
 
--spec store_key(keyname(), {pem_file, file:filename()}, metadata(), store_opts()) ->
+-spec store_key(keyname(), {pem_file, file:filename()}, authority(), store_opts()) ->
     ok | {error, file:posix() | {unknown_key, _}}.
-store_key(Keyname, {pem_file, Filename}, Metadata, Opts) ->
+store_key(Keyname, {pem_file, Filename}, Authority, Opts) ->
     case jose_jwk:from_pem_file(Filename) of
         JWK = #jose_jwk{} ->
             Key = construct_key(derive_kid(JWK, Opts), JWK),
-            ok = insert_key(Keyname, Key#{metadata => Metadata});
+            ok = insert_key(Keyname, Key#{authority => Authority});
         Error = {error, _} ->
             Error
     end.

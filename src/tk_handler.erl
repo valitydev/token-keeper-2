@@ -35,18 +35,19 @@ do_handle_function('AddExistingToken', _, _State) ->
     erlang:error(not_implemented);
 do_handle_function('GetByToken' = Op, {Token, TokenSourceContext}, State) ->
     _ = handle_beat(Op, started, State),
-    case tk_token_jwt:verify(Token) of
+    TokenSourceContextDecoded = decode_source_context(TokenSourceContext),
+    case tk_token_jwt:verify(Token, TokenSourceContextDecoded) of
         {ok, TokenInfo} ->
-            TokenSourceContextDecoded = decode_source_context(TokenSourceContext),
-            State1 = save_pulse_metadata(#{token => TokenInfo, source => TokenSourceContextDecoded}, State),
-            case extract_auth_data(TokenInfo, TokenSourceContextDecoded) of
+            State1 = save_pulse_metadata(#{token => TokenInfo}, State),
+            Authority = get_token_authority(TokenInfo),
+            case tk_authority:get_authdata_by_token(TokenInfo, Authority) of
                 {ok, AuthDataPrototype} ->
                     EncodedAuthData = encode_auth_data(AuthDataPrototype#{token => Token}),
                     _ = handle_beat(Op, succeeded, State1),
                     {ok, EncodedAuthData};
                 {error, Reason} ->
-                    _ = handle_beat(Op, {failed, {context_creaton, Reason}}, State1),
-                    woody_error:raise(business, #token_keeper_ContextCreationFailed{})
+                    _ = handle_beat(Op, {failed, {not_found, Reason}}, State1),
+                    woody_error:raise(business, #token_keeper_AuthDataNotFound{})
             end;
         {error, Reason} ->
             _ = handle_beat(Op, {failed, {token_verification, Reason}}, State),
@@ -66,56 +67,12 @@ make_state(WoodyCtx, Opts) ->
         pulse_metadata = #{woody_ctx => WoodyCtx}
     }.
 
-extract_auth_data(TokenInfo, TokenSourceContext) ->
-    TokenType = determine_token_type(TokenSourceContext),
-    case tk_bouncer_context:extract_context_fragment(TokenInfo, TokenType) of
-        ContextFragment when ContextFragment =/= undefined ->
-            AuthDataPrototype = genlib_map:compact(#{
-                context => ContextFragment,
-                metadata => extract_token_metadata(TokenType, TokenInfo),
-                authority => get_authority(TokenInfo)
-            }),
-            {ok, AuthDataPrototype};
-        undefined ->
-            {error, unable_to_infer_auth_data}
-    end.
-
-determine_token_type(#{request_origin := Origin}) ->
-    UserTokenOrigins = application:get_env(token_keeper, user_session_token_origins, []),
-    case lists:member(Origin, UserTokenOrigins) of
-        true ->
-            user_session_token;
-        false ->
-            api_key_token
-    end;
-determine_token_type(#{}) ->
-    api_key_token.
-
-get_authority(TokenInfo) ->
-    Metadata = tk_token_jwt:get_metadata(TokenInfo),
-    maps:get(authority, Metadata).
-
-extract_token_metadata(api_key_token, TokenInfo) ->
-    case tk_token_jwt:get_subject_id(TokenInfo) of
-        PartyID when PartyID =/= undefined ->
-            wrap_metadata(#{<<"party_id">> => PartyID}, TokenInfo);
-        _ ->
-            undefined
-    end;
-extract_token_metadata(user_session_token, _TokenInfo) ->
-    undefined.
-
-wrap_metadata(Metadata, TokenInfo) ->
-    TokenMetadata = tk_token_jwt:get_metadata(TokenInfo),
-    MetadataNS = maps:get(metadata_ns, TokenMetadata),
-    #{MetadataNS => Metadata}.
-
 encode_auth_data(AuthData) ->
     #token_keeper_AuthData{
         id = maps:get(id, AuthData, undefined),
         token = maps:get(token, AuthData),
         %% Assume active?
-        status = maps:get(status, AuthData, active),
+        status = maps:get(status, AuthData),
         context = maps:get(context, AuthData),
         metadata = maps:get(metadata, AuthData, #{}),
         authority = maps:get(authority, AuthData)
@@ -125,6 +82,18 @@ decode_source_context(TokenSourceContext) ->
     genlib_map:compact(#{
         request_origin => TokenSourceContext#token_keeper_TokenSourceContext.request_origin
     }).
+
+%%
+
+get_token_authority(TokenInfo) ->
+    AuthorityID = tk_token_jwt:get_authority(TokenInfo),
+    Authorities = application:get_env(token_keeper, authorities, #{}),
+    case maps:get(AuthorityID, Authorities, undefined) of
+        Config when Config =/= undefined ->
+            Config;
+        undefined ->
+            throw({misconfiguration, {no_such_authority, AuthorityID}})
+    end.
 
 %%
 
