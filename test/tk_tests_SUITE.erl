@@ -23,6 +23,10 @@
 -export([detect_dummy_token_test/1]).
 -export([no_token_claim_test/1]).
 -export([bouncer_context_from_claims_test/1]).
+-export([cons_claim_passthrough_test/1]).
+-export([invoice_template_access_token_ok_test/1]).
+-export([invoice_template_access_token_no_access_test/1]).
+-export([invoice_template_access_token_invalid_access_test/1]).
 
 -type config() :: ct_helper:config().
 -type group_name() :: atom().
@@ -35,6 +39,8 @@
 
 -define(TK_AUTHORITY_KEYCLOAK, <<"test.rbkmoney.keycloak">>).
 -define(TK_AUTHORITY_CAPI, <<"test.rbkmoney.capi">>).
+
+-define(TK_RESOURCE_DOMAIN, <<"test-domain">>).
 
 -define(METADATA(Authority, Metadata), #{Authority := Metadata}).
 -define(PARTY_METADATA(Authority, SubjectID), ?METADATA(Authority, #{<<"party_id">> := SubjectID})).
@@ -56,7 +62,8 @@
 all() ->
     [
         {group, detect_token_type},
-        {group, claim_only}
+        {group, claim_only},
+        {group, invoice_template_access_token}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -69,7 +76,13 @@ groups() ->
         ]},
         {claim_only, [parallel], [
             no_token_claim_test,
-            bouncer_context_from_claims_test
+            bouncer_context_from_claims_test,
+            cons_claim_passthrough_test
+        ]},
+        {invoice_template_access_token, [parallel], [
+            invoice_template_access_token_ok_test,
+            invoice_template_access_token_no_access_test,
+            invoice_template_access_token_invalid_access_test
         ]}
     ].
 
@@ -148,17 +161,42 @@ init_per_group(claim_only = Name, C) ->
         }}
     ]) ++
         [{groupname, Name} | C];
+init_per_group(invoice_template_access_token = Name, C) ->
+    start_keeper([
+        {jwt, #{
+            keyset => #{
+                test => #{
+                    source => {pem_file, get_keysource("keys/local/private.pem", C)},
+                    authority => invoice_tpl_authority
+                }
+            }
+        }},
+        {authorities, #{
+            invoice_tpl_authority => #{
+                id => ?TK_AUTHORITY_CAPI,
+                authdata_sources => [
+                    {extract, #{
+                        methods => [
+                            {claim, #{
+                                metadata_ns => ?TK_META_NS_APIKEYMGMT
+                            }},
+                            {invoice_template_access_token, #{
+                                domain => ?TK_RESOURCE_DOMAIN,
+                                metadata_ns => ?TK_META_NS_APIKEYMGMT
+                            }}
+                        ]
+                    }}
+                ]
+            }
+        }}
+    ]) ++
+        [{groupname, Name} | C];
 init_per_group(Name, C) ->
     [{groupname, Name} | C].
 
 -spec end_per_group(group_name(), config()) -> _.
-end_per_group(GroupName, C) when
-    GroupName =:= detect_token_type;
-    GroupName =:= claim_only
-->
+end_per_group(_GroupName, C) ->
     ok = stop_keeper(C),
-    ok;
-end_per_group(_Name, _C) ->
     ok.
 
 -spec init_per_testcase(atom(), config()) -> config().
@@ -206,14 +244,15 @@ detect_api_key_test(C) ->
     JTI = unique_id(),
     SubjectID = <<"TEST">>,
     {ok, Token} = issue_token(JTI, #{<<"sub">> => SubjectID}, unlimited),
-    AuthData = call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(), Client),
-    _ = ct:pal("~p", [AuthData]),
-    ?assertEqual(undefined, AuthData#token_keeper_AuthData.id),
-    ?assertEqual(Token, AuthData#token_keeper_AuthData.token),
-    ?assertEqual(active, AuthData#token_keeper_AuthData.status),
-    ?assert(assert_context({api_key_token, JTI, SubjectID}, AuthData#token_keeper_AuthData.context)),
-    ?assertMatch(?PARTY_METADATA(?TK_META_NS_APIKEYMGMT, SubjectID), AuthData#token_keeper_AuthData.metadata),
-    ?assertEqual(?TK_AUTHORITY_KEYCLOAK, AuthData#token_keeper_AuthData.authority).
+    #token_keeper_AuthData{
+        id = undefined,
+        token = Token,
+        status = active,
+        context = Context,
+        metadata = ?PARTY_METADATA(?TK_META_NS_APIKEYMGMT, SubjectID),
+        authority = ?TK_AUTHORITY_KEYCLOAK
+    } = call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(), Client),
+    _ = assert_context({api_key_token, JTI, SubjectID}, Context).
 
 -spec detect_user_session_token_test(config()) -> ok.
 detect_user_session_token_test(C) ->
@@ -222,22 +261,15 @@ detect_user_session_token_test(C) ->
     SubjectID = <<"TEST">>,
     SubjectEmail = <<"test@test.test">>,
     {ok, Token} = issue_token(JTI, #{<<"sub">> => SubjectID, <<"email">> => SubjectEmail}, unlimited),
-    AuthData = call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), Client),
-    _ = ct:pal("~p", [AuthData]),
-    ?assertEqual(undefined, AuthData#token_keeper_AuthData.id),
-    ?assertEqual(Token, AuthData#token_keeper_AuthData.token),
-    ?assertEqual(active, AuthData#token_keeper_AuthData.status),
-    ?assert(
-        assert_context(
-            {user_session_token, JTI, SubjectID, SubjectEmail, unlimited},
-            AuthData#token_keeper_AuthData.context
-        )
-    ),
-    ?assertMatch(
-        ?USER_METADATA(?TK_META_NS_KEYCLOAK, SubjectID, SubjectEmail),
-        AuthData#token_keeper_AuthData.metadata
-    ),
-    ?assertEqual(?TK_AUTHORITY_KEYCLOAK, AuthData#token_keeper_AuthData.authority).
+    #token_keeper_AuthData{
+        id = undefined,
+        token = Token,
+        status = active,
+        context = Context,
+        metadata = ?USER_METADATA(?TK_META_NS_KEYCLOAK, SubjectID, SubjectEmail),
+        authority = ?TK_AUTHORITY_KEYCLOAK
+    } = call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), Client),
+    _ = assert_context({user_session_token, JTI, SubjectID, SubjectEmail, unlimited}, Context).
 
 -spec detect_dummy_token_test(config()) -> ok.
 detect_dummy_token_test(C) ->
@@ -261,14 +293,94 @@ bouncer_context_from_claims_test(C) ->
     JTI = unique_id(),
     SubjectID = <<"TEST">>,
     {ok, Token} = issue_token_with_context(JTI, SubjectID),
-    AuthData = call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(), Client),
-    _ = ct:pal("~p", [AuthData]),
-    ?assertEqual(undefined, AuthData#token_keeper_AuthData.id),
-    ?assertEqual(Token, AuthData#token_keeper_AuthData.token),
-    ?assertEqual(active, AuthData#token_keeper_AuthData.status),
-    ?assert(assert_context({claim_token, JTI}, AuthData#token_keeper_AuthData.context)),
-    ?assertMatch(?PARTY_METADATA(?TK_META_NS_APIKEYMGMT, SubjectID), AuthData#token_keeper_AuthData.metadata),
-    ?assertEqual(?TK_AUTHORITY_CAPI, AuthData#token_keeper_AuthData.authority).
+    #token_keeper_AuthData{
+        id = undefined,
+        token = Token,
+        status = active,
+        context = Context,
+        metadata = ?PARTY_METADATA(?TK_META_NS_APIKEYMGMT, SubjectID),
+        authority = ?TK_AUTHORITY_CAPI
+    } = call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(), Client),
+    _ = assert_context({claim_token, JTI}, Context).
+
+-spec cons_claim_passthrough_test(config()) -> ok.
+cons_claim_passthrough_test(C) ->
+    Client = mk_client(C),
+    JTI = unique_id(),
+    SubjectID = <<"TEST">>,
+    {ok, Token} = issue_token_with_context(JTI, SubjectID, #{<<"cons">> => <<"client">>}),
+    #token_keeper_AuthData{
+        id = undefined,
+        token = Token,
+        status = active,
+        context = Context,
+        metadata = ?METADATA(?TK_META_NS_APIKEYMGMT, #{<<"party_id">> := SubjectID, <<"cons">> := <<"client">>}),
+        authority = ?TK_AUTHORITY_CAPI
+    } = call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(), Client),
+    _ = assert_context({claim_token, JTI}, Context).
+
+-spec invoice_template_access_token_ok_test(config()) -> ok.
+invoice_template_access_token_ok_test(C) ->
+    Client = mk_client(C),
+    JTI = unique_id(),
+    InvoiceTemplateID = unique_id(),
+    SubjectID = <<"TEST">>,
+    {ok, Token} = issue_token(
+        JTI,
+        #{
+            <<"sub">> => SubjectID,
+            <<"resource_access">> => #{
+                ?TK_RESOURCE_DOMAIN => #{
+                    <<"roles">> => [
+                        <<"party.*.invoice_templates.", InvoiceTemplateID/binary, ".invoice_template_invoices:write">>,
+                        <<"party.*.invoice_templates.", InvoiceTemplateID/binary, ":read">>
+                    ]
+                }
+            }
+        },
+        unlimited
+    ),
+    #token_keeper_AuthData{
+        id = undefined,
+        token = Token,
+        status = active,
+        context = Context,
+        metadata = ?PARTY_METADATA(?TK_META_NS_APIKEYMGMT, SubjectID),
+        authority = ?TK_AUTHORITY_CAPI
+    } = call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(), Client),
+    _ = assert_context({invoice_template_access_token, JTI, SubjectID, InvoiceTemplateID}, Context).
+
+-spec invoice_template_access_token_no_access_test(config()) -> ok.
+invoice_template_access_token_no_access_test(C) ->
+    Client = mk_client(C),
+    JTI = unique_id(),
+    SubjectID = <<"TEST">>,
+    {ok, Token} = issue_token(JTI, #{<<"sub">> => SubjectID, <<"resource_access">> => #{}}, unlimited),
+    #token_keeper_AuthDataNotFound{} =
+        (catch call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(), Client)).
+
+-spec invoice_template_access_token_invalid_access_test(config()) -> ok.
+invoice_template_access_token_invalid_access_test(C) ->
+    Client = mk_client(C),
+    JTI = unique_id(),
+    InvoiceID = unique_id(),
+    SubjectID = <<"TEST">>,
+    {ok, Token} = issue_token(
+        JTI,
+        #{
+            <<"sub">> => SubjectID,
+            <<"resource_access">> => #{
+                ?TK_RESOURCE_DOMAIN => #{
+                    <<"roles">> => [
+                        <<"invoices.", InvoiceID/binary, ":read">>
+                    ]
+                }
+            }
+        },
+        unlimited
+    ),
+    #token_keeper_AuthDataNotFound{} =
+        (catch call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(), Client)).
 
 %%
 
@@ -303,34 +415,43 @@ get_service_spec(token_keeper) ->
 
 assert_context(TokenInfo, EncodedContextFragment) ->
     #bctx_v1_ContextFragment{auth = Auth, user = User} = decode_bouncer_fragment(EncodedContextFragment),
-    ?assert(assert_auth(TokenInfo, Auth)),
-    ?assert(assert_user(TokenInfo, User)),
-    true.
+    _ = assert_auth(TokenInfo, Auth),
+    _ = assert_user(TokenInfo, User).
 
 assert_auth({claim_token, JTI}, Auth) ->
     ?assertEqual(<<"ClaimToken">>, Auth#bctx_v1_Auth.method),
-    ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token),
-    true;
+    ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token);
 assert_auth({api_key_token, JTI, SubjectID}, Auth) ->
     ?assertEqual(<<"ApiKeyToken">>, Auth#bctx_v1_Auth.method),
     ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token),
-    ?assertMatch([#bctx_v1_AuthScope{party = ?CTX_ENTITY(SubjectID)}], Auth#bctx_v1_Auth.scope),
-    true;
+    ?assertMatch([#bctx_v1_AuthScope{party = ?CTX_ENTITY(SubjectID)}], Auth#bctx_v1_Auth.scope);
+assert_auth({invoice_template_access_token, JTI, SubjectID, InvoiceTemplateID}, Auth) ->
+    ?assertEqual(<<"InvoiceTemplateAccessToken">>, Auth#bctx_v1_Auth.method),
+    ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token),
+    ?assertMatch(
+        [
+            #bctx_v1_AuthScope{
+                party = ?CTX_ENTITY(SubjectID),
+                invoice_template = ?CTX_ENTITY(InvoiceTemplateID)
+            }
+        ],
+        Auth#bctx_v1_Auth.scope
+    );
 assert_auth({user_session_token, JTI, _SubjectID, _SubjectEmail, Exp}, Auth) ->
     ?assertEqual(<<"SessionToken">>, Auth#bctx_v1_Auth.method),
     ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token),
-    ?assertEqual(make_auth_expiration(Exp), Auth#bctx_v1_Auth.expiration),
-    true.
+    ?assertEqual(make_auth_expiration(Exp), Auth#bctx_v1_Auth.expiration).
 
 assert_user({claim_token, _}, undefined) ->
-    true;
+    ok;
 assert_user({api_key_token, _, _}, undefined) ->
-    true;
+    ok;
+assert_user({invoice_template_access_token, _, _, _}, undefined) ->
+    ok;
 assert_user({user_session_token, _JTI, SubjectID, SubjectEmail, _Exp}, User) ->
     ?assertEqual(SubjectID, User#bctx_v1_User.id),
     ?assertEqual(SubjectEmail, User#bctx_v1_User.email),
-    ?assertEqual(?CTX_ENTITY(<<"external">>), User#bctx_v1_User.realm),
-    true.
+    ?assertEqual(?CTX_ENTITY(<<"external">>), User#bctx_v1_User.realm).
 
 %%
 
@@ -346,6 +467,9 @@ issue_token(JTI, Claims0, Expiration) ->
     tk_token_jwt:issue(JTI, Claims, test).
 
 issue_token_with_context(JTI, SubjectID) ->
+    issue_token_with_context(JTI, SubjectID, #{}).
+
+issue_token_with_context(JTI, SubjectID, AdditionalClaims) ->
     Acc0 = bouncer_context_helpers:empty(),
     Acc1 = bouncer_context_helpers:add_auth(
         #{
@@ -357,7 +481,7 @@ issue_token_with_context(JTI, SubjectID) ->
     FragmentContent = encode_context_fragment_content(Acc1),
     issue_token(
         JTI,
-        #{
+        AdditionalClaims#{
             <<"sub">> => SubjectID,
             <<"bouncer_ctx">> => #{
                 <<"ty">> => <<"v1_thrift_binary">>,
