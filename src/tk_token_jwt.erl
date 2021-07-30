@@ -5,7 +5,7 @@
 
 %% API
 
--export([issue/3]).
+-export([issue/2]).
 -export([verify/2]).
 
 -export([get_token_id/1]).
@@ -22,6 +22,8 @@
 -export([create_claims/2]).
 -export([set_subject_email/2]).
 
+-export([get_key_authority/1]).
+
 %% Supervisor callbacks
 
 -export([init/1]).
@@ -29,7 +31,7 @@
 
 %% API types
 
--type t() :: {token_id(), claims(), authority(), metadata()}.
+-type t() :: {claims(), authority(), metadata()}.
 -type claim() :: expiration() | term().
 -type claims() :: #{binary() => claim()}.
 -type token() :: binary().
@@ -44,6 +46,8 @@
     source_context => source_context()
 }.
 
+-type keyname() :: term().
+
 -export_type([t/0]).
 -export_type([claim/0]).
 -export_type([claims/0]).
@@ -51,10 +55,10 @@
 -export_type([expiration/0]).
 -export_type([metadata/0]).
 -export_type([options/0]).
+-export_type([keyname/0]).
 
 %% Internal types
 
--type keyname() :: term().
 -type kid() :: binary().
 -type key() :: #jose_jwk{}.
 
@@ -89,9 +93,9 @@
 %% API functions
 %%
 
--spec get_token_id(t()) -> token_id().
-get_token_id({TokenId, _Claims, _Authority, _Metadata}) ->
-    TokenId.
+-spec get_token_id(t()) -> token_id() | undefined.
+get_token_id(T) ->
+    get_claim(?CLAIM_TOKEN_ID, T, undefined).
 
 -spec get_subject_id(t()) -> subject_id() | undefined.
 get_subject_id(T) ->
@@ -101,35 +105,35 @@ get_subject_id(T) ->
 get_subject_email(T) ->
     get_claim(?CLAIM_SUBJECT_EMAIL, T, undefined).
 
--spec get_expires_at(t()) -> expiration().
-get_expires_at({_TokenId, Claims, _Authority, _Metadata}) ->
-    case maps:get(?CLAIM_EXPIRES_AT, Claims) of
+-spec get_expires_at(t()) -> expiration() | undefined.
+get_expires_at(T) ->
+    case get_claim(?CLAIM_EXPIRES_AT, T, undefined) of
         0 -> unlimited;
         V -> V
     end.
 
 -spec get_claims(t()) -> claims().
-get_claims({_TokenId, Claims, _Authority, _Metadata}) ->
+get_claims({Claims, _Authority, _Metadata}) ->
     Claims.
 
 -spec get_claim(binary(), t()) -> claim().
-get_claim(ClaimName, {_TokenId, Claims, _Authority, _Metadata}) ->
+get_claim(ClaimName, {Claims, _Authority, _Metadata}) ->
     maps:get(ClaimName, Claims).
 
 -spec get_claim(binary(), t(), claim()) -> claim().
-get_claim(ClaimName, {_TokenId, Claims, _Authority, _Metadata}, Default) ->
+get_claim(ClaimName, {Claims, _Authority, _Metadata}, Default) ->
     maps:get(ClaimName, Claims, Default).
 
 -spec get_authority(t()) -> authority().
-get_authority({_TokenId, _Claims, Authority, _Metadata}) ->
+get_authority({_Claims, Authority, _Metadata}) ->
     Authority.
 
 -spec get_metadata(t()) -> metadata().
-get_metadata({_TokenId, _Claims, _Authority, Metadata}) ->
+get_metadata({_Claims, _Authority, Metadata}) ->
     Metadata.
 
 -spec get_source_context(t()) -> source_context().
-get_source_context({_TokenId, _Claims, _Authority, Metadata}) ->
+get_source_context({_Claims, _Authority, Metadata}) ->
     maps:get(source_context, Metadata).
 
 -spec create_claims(claims(), expiration()) -> claims().
@@ -143,14 +147,14 @@ set_subject_email(SubjectEmail, Claims) ->
 
 %%
 
--spec issue(token_id(), claims(), keyname()) ->
+-spec issue(claims(), keyname()) ->
     {ok, token()}
     | {error, nonexistent_key}
     | {error, {invalid_signee, Reason :: atom()}}.
-issue(JTI, Claims, Signer) ->
+issue(Claims, Signer) ->
     case try_get_key_for_sign(Signer) of
         {ok, Key} ->
-            FinalClaims = construct_final_claims(Claims, JTI),
+            FinalClaims = construct_final_claims(Claims),
             sign(Key, FinalClaims);
         {error, Error} ->
             {error, Error}
@@ -166,10 +170,8 @@ try_get_key_for_sign(Keyname) ->
             {error, nonexistent_key}
     end.
 
-construct_final_claims(Claims, JTI) ->
-    Token0 = #{?CLAIM_TOKEN_ID => JTI},
-    EncodedClaims = maps:map(fun encode_claim/2, Claims),
-    maps:merge(EncodedClaims, Token0).
+construct_final_claims(Claims) ->
+    maps:map(fun encode_claim/2, Claims).
 
 encode_claim(?CLAIM_EXPIRES_AT, Expiration) ->
     mk_expires_at(Expiration);
@@ -235,23 +237,10 @@ make_metadata(SourceContext) ->
 verify_with_key(JWK, ExpandedToken, Authority, Metadata) ->
     case jose_jwt:verify(JWK, ExpandedToken) of
         {true, #jose_jwt{fields = Claims}, _JWS} ->
-            _ = validate_claims(Claims),
-            get_result(Claims, Authority, Metadata);
+            {ok, {Claims, Authority, Metadata}};
         {false, _JWT, _JWS} ->
             {error, invalid_signature}
     end.
-
-validate_claims(Claims) ->
-    validate_claims(Claims, get_validators()).
-
-validate_claims(Claims, [{Name, Claim, Validator} | Rest]) ->
-    _ = Validator(Name, maps:get(Claim, Claims, undefined)),
-    validate_claims(Claims, Rest);
-validate_claims(Claims, []) ->
-    Claims.
-
-get_result(#{?CLAIM_TOKEN_ID := TokenID} = Claims, Authority, Metadata) ->
-    {ok, {TokenID, maps:without([?CLAIM_TOKEN_ID], Claims), Authority, Metadata}}.
 
 get_kid(#{<<"kid">> := KID}) when is_binary(KID) ->
     KID;
@@ -263,18 +252,16 @@ get_alg(#{<<"alg">> := Alg}) when is_binary(Alg) ->
 get_alg(#{}) ->
     throw({invalid_token, {missing, alg}}).
 
-get_validators() ->
-    [
-        {token_id, ?CLAIM_TOKEN_ID, fun check_presence/2},
-        {expires_at, ?CLAIM_EXPIRES_AT, fun check_presence/2}
-    ].
+%%
 
-check_presence(_, V) when is_binary(V) ->
-    V;
-check_presence(_, V) when is_integer(V) ->
-    V;
-check_presence(C, undefined) ->
-    throw({invalid_token, {missing, C}}).
+-spec get_key_authority(keyname()) -> {ok, authority()} | {error, {nonexistent_key, keyname()}}.
+get_key_authority(KeyName) ->
+    case get_key_by_name(KeyName) of
+        #{authority := Authority} ->
+            {ok, Authority};
+        undefined ->
+            {error, {nonexistent_key, KeyName}}
+    end.
 
 %%
 %% Supervisor callbacks

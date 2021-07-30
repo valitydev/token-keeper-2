@@ -65,7 +65,10 @@ verify_test(_) ->
     JTI = unique_id(),
     PartyID = <<"TEST">>,
     {ok, Token} = issue_token(JTI, #{<<"sub">> => PartyID, <<"TEST">> => <<"TEST">>}, unlimited),
-    {ok, {JTI, #{<<"sub">> := PartyID, <<"TEST">> := <<"TEST">>}, test, #{}}} = tk_token_jwt:verify(Token, #{}).
+    {ok, {#{<<"jti">> := JTI, <<"sub">> := PartyID, <<"TEST">> := <<"TEST">>}, test, #{}}} = tk_token_jwt:verify(
+        Token,
+        #{}
+    ).
 
 -spec bad_token_test(config()) -> _.
 bad_token_test(Config) ->
@@ -76,13 +79,13 @@ bad_token_test(Config) ->
 bad_signee_test(_) ->
     Claims = tk_token_jwt:create_claims(#{}, unlimited),
     {error, nonexistent_key} =
-        tk_token_jwt:issue(unique_id(), Claims, random).
+        tk_token_jwt:issue(Claims, random).
 
 %%
 
 issue_token(JTI, Claims0, Expiration) ->
-    Claims = tk_token_jwt:create_claims(Claims0, Expiration),
-    tk_token_jwt:issue(JTI, Claims, test).
+    Claims1 = tk_token_jwt:create_claims(Claims0, Expiration),
+    tk_token_jwt:issue(Claims1#{<<"jti">> => JTI}, test).
 
 issue_dummy_token(Config) ->
     Claims = #{

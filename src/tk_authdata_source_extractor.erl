@@ -9,14 +9,22 @@
 
 %%
 
--type source_opts() :: #{
-    methods => tk_context_extractor:methods()
+-type extracted_authdata() :: #{
+    status := tk_authority:status(),
+    context := tk_authority:encoded_context_fragment(),
+    metadata => tk_authority:metadata()
 }.
+
+-type source_opts() :: #{
+    methods => tk_extractor:methods()
+}.
+
+-export_type([extracted_authdata/0]).
 -export_type([source_opts/0]).
 
 %% Behaviour functions
 
--spec get_authdata(tk_token_jwt:t(), source_opts()) -> tk_authdata_source:stored_authdata() | undefined.
+-spec get_authdata(tk_token_jwt:t(), source_opts()) -> extracted_authdata() | undefined.
 get_authdata(Token, Opts) ->
     Methods = get_extractor_methods(Opts),
     case extract_context_with(Methods, Token) of
@@ -35,7 +43,7 @@ extract_context_with([], _Token) ->
     undefined;
 extract_context_with([MethodOpts | Rest], Token) ->
     {Method, Opts} = get_method_opts(MethodOpts),
-    case tk_context_extractor:get_context(Method, Token, Opts) of
+    case tk_extractor:get_context(Method, Token, Opts) of
         AuthData when AuthData =/= undefined ->
             AuthData;
         undefined ->
@@ -49,8 +57,6 @@ make_auth_data(ContextFragment, Metadata) ->
         metadata => Metadata
     }).
 
-encode_context_fragment({encoded_context_fragment, ContextFragment}) ->
-    ContextFragment;
 encode_context_fragment(ContextFragment) ->
     #bctx_ContextFragment{
         type = v1_thrift_binary,

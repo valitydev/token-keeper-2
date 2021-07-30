@@ -2,7 +2,7 @@
 
 %% Behaviour
 
--callback get_authdata(tk_token_jwt:t(), source_opts()) -> stored_authdata() | undefined.
+-callback get_authdata(tk_token_jwt:t(), source_opts()) -> sourced_authdata() | undefined.
 
 %% API functions
 
@@ -11,21 +11,22 @@
 %% API Types
 
 -type authdata_source() :: storage_source() | extractor_source().
-
--type stored_authdata() :: #{
-    id => tk_authority:id(),
+-type sourced_authdata() :: #{
+    id => tk_authority:authdata_id(),
     status := tk_authority:status(),
     context := tk_authority:encoded_context_fragment(),
+    authority => tk_authority:autority_id(),
     metadata => tk_authority:metadata()
 }.
 
 -export_type([authdata_source/0]).
--export_type([stored_authdata/0]).
+-export_type([sourced_authdata/0]).
 
 %% Internal types
 
--type storage_source() :: maybe_opts(storage, tk_authdata_source_storage:source_opts()).
+-type storage_source() :: {storage, tk_authdata_source_storage:source_opts()}.
 -type extractor_source() :: maybe_opts(extractor, tk_authdata_source_extractor:source_opts()).
+
 -type maybe_opts(Source, Opts) :: Source | {Source, Opts}.
 
 -type source_opts() ::
@@ -34,7 +35,7 @@
 
 %% API functions
 
--spec get_authdata(authdata_source(), tk_token_jwt:t()) -> stored_authdata() | undefined.
+-spec get_authdata(authdata_source(), tk_token_jwt:t()) -> sourced_authdata() | undefined.
 get_authdata(AuthDataSource, Token) ->
     {Source, Opts} = get_source_opts(AuthDataSource),
     Hander = get_source_handler(Source),
