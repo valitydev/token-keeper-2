@@ -28,6 +28,8 @@
 -export([invoice_template_access_token_no_access_test/1]).
 -export([invoice_template_access_token_invalid_access_test/1]).
 -export([basic_issuing_test/1]).
+-export([jti_and_authority_blacklist_test/1]).
+-export([empty_blacklist_test/1]).
 
 -type config() :: ct_helper:config().
 -type group_name() :: atom().
@@ -65,7 +67,8 @@ all() ->
         {group, detect_token_type},
         {group, claim_only},
         {group, invoice_template_access_token},
-        {group, issuing}
+        {group, issuing},
+        {group, blacklist}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -88,6 +91,10 @@ groups() ->
         ]},
         {issuing, [parallel], [
             basic_issuing_test
+        ]},
+        {blacklist, [], [
+            jti_and_authority_blacklist_test,
+            empty_blacklist_test
         ]}
     ].
 
@@ -111,7 +118,7 @@ init_per_group(detect_token_type = Name, C) ->
         {jwt, #{
             keyset => #{
                 test => #{
-                    source => {pem_file, get_keysource("keys/local/private.pem", C)},
+                    source => {pem_file, get_filename("keys/local/private.pem", C)},
                     authority => keycloak
                 }
             }
@@ -144,7 +151,7 @@ init_per_group(claim_only = Name, C) ->
         {jwt, #{
             keyset => #{
                 test => #{
-                    source => {pem_file, get_keysource("keys/local/private.pem", C)},
+                    source => {pem_file, get_filename("keys/local/private.pem", C)},
                     authority => claim_only
                 }
             }
@@ -167,7 +174,7 @@ init_per_group(invoice_template_access_token = Name, C) ->
         {jwt, #{
             keyset => #{
                 test => #{
-                    source => {pem_file, get_keysource("keys/local/private.pem", C)},
+                    source => {pem_file, get_filename("keys/local/private.pem", C)},
                     authority => invoice_tpl_authority
                 }
             }
@@ -198,7 +205,7 @@ init_per_group(issuing = Name, C) ->
         {jwt, #{
             keyset => #{
                 test => #{
-                    source => {pem_file, get_keysource("keys/local/private.pem", C)},
+                    source => {pem_file, get_filename("keys/local/private.pem", C)},
                     authority => issuing_authority
                 }
             }
@@ -221,17 +228,75 @@ init_per_group(Name, C) ->
     [{groupname, Name} | C].
 
 -spec end_per_group(group_name(), config()) -> _.
+end_per_group(blacklist, _C) ->
+    ok;
 end_per_group(_GroupName, C) ->
     ok = stop_keeper(C),
     ok.
 
 -spec init_per_testcase(atom(), config()) -> config().
-
+init_per_testcase(jti_and_authority_blacklist_test = Name, C) ->
+    start_keeper([
+        {jwt, #{
+            keyset => #{
+                primary => #{
+                    source => {pem_file, get_filename("keys/local/private.pem", C)},
+                    authority => blacklisting_authority
+                },
+                secondary => #{
+                    source => {pem_file, get_filename("keys/secondary/private.pem", C)},
+                    authority => some_other_authority
+                }
+            }
+        }},
+        {blacklist, #{
+            path => get_filename("blacklisted_keys.yaml", C)
+        }},
+        {authorities, #{
+            blacklisting_authority => #{
+                id => ?TK_AUTHORITY_CAPI,
+                signer => primary,
+                authdata_sources => []
+            },
+            some_other_authority => #{
+                id => ?TK_AUTHORITY_CAPI,
+                signer => secondary,
+                authdata_sources => []
+            }
+        }}
+    ]) ++ [{testcase, Name} | C];
+init_per_testcase(empty_blacklist_test = Name, C) ->
+    start_keeper([
+        {jwt, #{
+            keyset => #{
+                primary => #{
+                    source => {pem_file, get_filename("keys/local/private.pem", C)},
+                    authority => authority
+                }
+            }
+        }},
+        {blacklist, #{
+            path => get_filename("empty_blacklist.yaml", C)
+        }},
+        {authorities, #{
+            authority => #{
+                id => ?TK_AUTHORITY_CAPI,
+                signer => primary,
+                authdata_sources => []
+            }
+        }}
+    ]) ++ [{testcase, Name} | C];
 init_per_testcase(Name, C) ->
     [{testcase, Name} | C].
 
 -spec end_per_testcase(atom(), config()) -> config().
 
+end_per_testcase(Name, C) when
+    Name =:= jti_and_authority_blacklist_test;
+    Name =:= empty_blacklist_test
+->
+    ok = stop_keeper(C),
+    ok;
 end_per_testcase(_Name, _C) ->
     ok.
 
@@ -429,6 +494,25 @@ basic_issuing_test(C) ->
     ok = verify_token(Token, BinaryContextFragment, Metadata, JTI),
     AuthData = call_get_by_token(Token, ?TOKEN_SOURCE_CONTEXT(), Client).
 
+-spec jti_and_authority_blacklist_test(config()) -> ok.
+jti_and_authority_blacklist_test(C) ->
+    Client = mk_client(C),
+    JTI = <<"MYCOOLKEY">>,
+    {ok, Token0} = issue_token(JTI, #{}, unlimited, primary),
+    #token_keeper_AuthDataRevoked{} =
+        (catch call_get_by_token(Token0, ?TOKEN_SOURCE_CONTEXT(), Client)),
+    {ok, Token1} = issue_token(JTI, #{}, unlimited, secondary),
+    #token_keeper_AuthDataNotFound{} =
+        (catch call_get_by_token(Token1, ?TOKEN_SOURCE_CONTEXT(), Client)).
+
+-spec empty_blacklist_test(config()) -> ok.
+empty_blacklist_test(C) ->
+    Client = mk_client(C),
+    JTI = <<"MYCOOLKEY">>,
+    {ok, Token1} = issue_token(JTI, #{}, unlimited, primary),
+    #token_keeper_AuthDataNotFound{} =
+        (catch call_get_by_token(Token1, ?TOKEN_SOURCE_CONTEXT(), Client)).
+
 %%
 
 mk_client(C) ->
@@ -543,8 +627,11 @@ create_bouncer_context(JTI) ->
     encode_context_fragment_content(Acc1).
 
 issue_token(JTI, Claims0, Expiration) ->
+    issue_token(JTI, Claims0, Expiration, test).
+
+issue_token(JTI, Claims0, Expiration, Issuer) ->
     Claims1 = tk_token_jwt:create_claims(Claims0, Expiration),
-    tk_token_jwt:issue(Claims1#{<<"jti">> => JTI}, test).
+    tk_token_jwt:issue(JTI, Claims1, Issuer).
 
 issue_token_with_context(JTI, SubjectID) ->
     issue_token_with_context(JTI, SubjectID, #{}).
@@ -569,9 +656,9 @@ issue_dummy_token(Config) ->
         <<"sub">> => <<"TEST">>,
         <<"exp">> => 0
     },
-    BadPemFile = get_keysource("keys/local/dummy.pem", Config),
+    BadPemFile = get_filename("keys/local/dummy.pem", Config),
     BadJWK = jose_jwk:from_pem_file(BadPemFile),
-    GoodPemFile = get_keysource("keys/local/private.pem", Config),
+    GoodPemFile = get_filename("keys/local/private.pem", Config),
     GoodJWK = jose_jwk:from_pem_file(GoodPemFile),
     JWKPublic = jose_jwk:to_public(GoodJWK),
     {_Module, PublicKey} = JWKPublic#jose_jwk.kty,
@@ -581,7 +668,7 @@ issue_dummy_token(Config) ->
     {_Modules, Token} = jose_jws:compact(JWT),
     {ok, Token}.
 
-get_keysource(Key, Config) ->
+get_filename(Key, Config) ->
     filename:join(?config(data_dir, Config), Key).
 
 unique_id() ->
