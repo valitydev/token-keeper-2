@@ -2,11 +2,12 @@
 
 %% Behaviour
 
--callback get_authdata(tk_token_jwt:t(), source_opts()) -> sourced_authdata() | undefined.
+-callback get_authdata(tk_token_jwt:t(), source_opts(), tk_woody_handler:handle_ctx()) ->
+    sourced_authdata() | undefined.
 
 %% API functions
 
--export([get_authdata/2]).
+-export([get_authdata/3]).
 
 %% API Types
 
@@ -19,6 +20,11 @@
     metadata => tk_authority:metadata()
 }.
 
+-type source_opts() ::
+    tk_authdata_source_extractor:source_opts()
+    | tk_authdata_source_claim:source_opts()
+    | tk_authdata_source_storage:source_opts().
+
 -export_type([authdata_source/0]).
 -export_type([sourced_authdata/0]).
 
@@ -30,23 +36,19 @@
 
 -type maybe_opts(Source, Opts) :: Source | {Source, Opts}.
 
--type source_opts() ::
-    tk_authdata_source_extractor:source_opts()
-    | tk_authdata_source_claim:source_opts()
-    | tk_authdata_source_storage:source_opts().
-
 %% API functions
 
--spec get_authdata(authdata_source(), tk_token_jwt:t()) -> sourced_authdata() | undefined.
-get_authdata(AuthDataSource, Token) ->
+-spec get_authdata(authdata_source(), tk_token_jwt:t(), tk_woody_handler:handle_ctx()) ->
+    sourced_authdata() | undefined.
+get_authdata(AuthDataSource, Token, Ctx) ->
     {Source, Opts} = get_source_opts(AuthDataSource),
     Hander = get_source_handler(Source),
-    Hander:get_authdata(Token, Opts).
+    Hander:get_authdata(Token, Opts, Ctx).
 
 %%
 
-get_source_opts({_Source, _Opts} = SourceOpts) ->
-    SourceOpts;
+get_source_opts({_Source, _Opts} = StorageOpts) ->
+    StorageOpts;
 get_source_opts(Source) when is_atom(Source) ->
     {Source, #{}}.
 

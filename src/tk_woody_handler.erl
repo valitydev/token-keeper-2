@@ -8,6 +8,12 @@
 -behaviour(woody_server_thrift_handler).
 -export([handle_function/4]).
 
+-type handle_ctx() :: #{
+    woody_ctx := woody_context:ctx()
+}.
+
+-export_type([handle_ctx/0]).
+
 %% Internal types
 
 -type opts() :: #{
@@ -22,20 +28,36 @@
 
 %%
 
--spec handle_function(woody:func(), woody:args(), woody_context:ctx(), opts()) -> {ok, woody:result()}.
+-spec handle_function(woody:func(), woody:args(), woody_context:ctx(), opts()) -> {ok, woody:result()} | no_return().
 handle_function(Op, Args, WoodyCtx, Opts) ->
     State = make_state(WoodyCtx, Opts),
     handle_function_(Op, Args, State).
 
-handle_function_('Create', {_ID, _ContextFragment, _Metadata}, _State) ->
-    %% TODO: Change protocol to include authdata id
-    erlang:error(not_implemented);
+handle_function_('Create' = Op, {ID, ContextFragment, Metadata}, State) ->
+    %% Create - создает новую AuthData, используя переданные в качестве
+    %% аргументов данные и сохраняет их в хранилище, после чего выписывает
+    %% новый JWT-токен, в котором содержится AuthDataID (на данный момент
+    %% предполагается, что AuthDataID == jwt-клейму “JTI”). По умолчанию
+    %% status токена - active; authority - id выписывающей authority.
+    _ = handle_beat(Op, started, State),
+    AuthorityConf = get_autority_config(get_issuing_authority()),
+    AuthData = issue_auth_data(ID, ContextFragment, Metadata, AuthorityConf),
+    case store(AuthData, build_context(State)) of
+        ok ->
+            {ok, Token} = tk_token_jwt:issue(ID, #{}, get_signer(AuthorityConf)),
+            EncodedAuthData = encode_auth_data(AuthData#{token => Token}),
+            _ = handle_beat(Op, succeeded, State),
+            {ok, EncodedAuthData};
+        {error, exists} ->
+            _ = handle_beat(Op, {failed, exists}, State),
+            woody_error:raise(business, #token_keeper_AuthDataAlreadyExists{})
+    end;
 handle_function_('CreateEphemeral' = Op, {ContextFragment, Metadata}, State) ->
     _ = handle_beat(Op, started, State),
-    Authority = get_autority_config(get_issuing_authority()),
-    AuthData = issue_auth_data(ContextFragment, Metadata, Authority),
+    AuthorityConf = get_autority_config(get_issuing_authority()),
+    AuthData = issue_auth_data(ContextFragment, Metadata, AuthorityConf),
     Claims = tk_token_claim_utils:encode_authdata(AuthData),
-    {ok, Token} = tk_token_jwt:issue(unique_id(), Claims, get_signer(Authority)),
+    {ok, Token} = tk_token_jwt:issue(unique_id(), Claims, get_signer(AuthorityConf)),
     EncodedAuthData = encode_auth_data(AuthData#{token => Token}),
     _ = handle_beat(Op, succeeded, State),
     {ok, EncodedAuthData};
@@ -48,13 +70,13 @@ handle_function_('GetByToken' = Op, {Token, TokenSourceContext}, State) ->
         {ok, TokenInfo} ->
             State1 = save_pulse_metadata(#{token => TokenInfo}, State),
             {_, Authority} = get_autority_config(get_token_authority(TokenInfo)),
-            case tk_authority:get_authdata_by_token(TokenInfo, Authority) of
+            case tk_authority:get_authdata_by_token(TokenInfo, Authority, build_context(State)) of
                 {ok, AuthDataPrototype} ->
                     EncodedAuthData = encode_auth_data(AuthDataPrototype#{token => Token}),
                     _ = handle_beat(Op, succeeded, State1),
                     {ok, EncodedAuthData};
                 {error, Reason} ->
-                    _ = handle_beat(Op, {failed, {not_found, Reason}}, State1),
+                    _ = handle_beat(Op, {failed, Reason}, State1),
                     woody_error:raise(business, #token_keeper_AuthDataNotFound{})
             end;
         {error, {verification, Reason}} ->
@@ -64,10 +86,29 @@ handle_function_('GetByToken' = Op, {Token, TokenSourceContext}, State) ->
             _ = handle_beat(Op, {failed, blacklisted}, State),
             woody_error:raise(business, #token_keeper_AuthDataRevoked{})
     end;
-handle_function_('Get', _, _State) ->
-    erlang:error(not_implemented);
-handle_function_('Revoke', _, _State) ->
-    erlang:error(not_implemented).
+handle_function_('Get' = Op, {ID}, State) ->
+    _ = handle_beat(Op, started, State),
+
+    case get_authdata_by_id(ID, build_context(State)) of
+        {ok, AuthData} ->
+            EncodedAuthData = encode_auth_data(AuthData),
+            _ = handle_beat(Op, succeeded, State),
+            {ok, EncodedAuthData};
+        {error, Reason} ->
+            _ = handle_beat(Op, {failed, Reason}, State),
+            woody_error:raise(business, #token_keeper_AuthDataNotFound{})
+    end;
+handle_function_('Revoke' = Op, {ID}, State) ->
+    _ = handle_beat(Op, started, State),
+
+    case revoke(ID, build_context(State)) of
+        ok ->
+            _ = handle_beat(Op, succeeded, State),
+            {ok, ok};
+        {error, notfound} ->
+            _ = handle_beat(Op, {failed, notfound}, State),
+            woody_error:raise(business, #token_keeper_AuthDataNotFound{})
+    end.
 
 %% Internal functions
 
@@ -89,17 +130,20 @@ check_blacklist(TokenInfo) ->
 
 %%
 
-issue_auth_data(ContextFragment, Metadata, Authority) ->
-    issue_auth_data(undefined, ContextFragment, Metadata, Authority).
+issue_auth_data(ContextFragment, Metadata, AuthorityConf) ->
+    issue_auth_data(undefined, ContextFragment, Metadata, AuthorityConf).
 
-issue_auth_data(ID, ContextFragment, Metadata, {_, AuthorityConf}) ->
-    tk_authority:create_authdata(ID, ContextFragment, Metadata, AuthorityConf).
+issue_auth_data(ID, ContextFragment, Metadata, {_, Authority}) ->
+    tk_authority:create_authdata(ID, ContextFragment, Metadata, Authority).
 
 unique_id() ->
     <<ID:64>> = snowflake:new(),
     genlib_format:format_int_base(ID, 62).
 
 %%
+
+build_context(#state{woody_context = WC}) ->
+    #{woody_ctx => WC}.
 
 make_state(WoodyCtx, Opts) ->
     #state{
@@ -111,12 +155,11 @@ make_state(WoodyCtx, Opts) ->
 encode_auth_data(AuthData) ->
     #token_keeper_AuthData{
         id = maps:get(id, AuthData, undefined),
-        token = maps:get(token, AuthData),
-        %% Assume active?
+        token = maps:get(token, AuthData, undefined),
         status = maps:get(status, AuthData),
         context = maps:get(context, AuthData),
         metadata = maps:get(metadata, AuthData, #{}),
-        authority = maps:get(authority, AuthData)
+        authority = maps:get(authority, AuthData, undefined)
     }.
 
 decode_source_context(TokenSourceContext) ->
@@ -167,6 +210,17 @@ get_signer({AuthorityID, AuthorityConf}) ->
 
 %%
 
+get_authdata_by_id(ID, Ctx) ->
+    tk_storage:get(ID, Ctx).
+
+store(AuthData, Ctx) ->
+    tk_storage:store(AuthData, Ctx).
+
+revoke(ID, Ctx) ->
+    tk_storage:revoke(ID, Ctx).
+
+%%
+
 handle_beat(Op, Event, State) ->
     tk_pulse:handle_beat({encode_pulse_op(Op), Event}, State#state.pulse_metadata, State#state.pulse).
 
@@ -176,4 +230,10 @@ save_pulse_metadata(Metadata, State = #state{pulse_metadata = PulseMetadata}) ->
 encode_pulse_op('CreateEphemeral') ->
     create_ephemeral;
 encode_pulse_op('GetByToken') ->
-    get_by_token.
+    get_by_token;
+encode_pulse_op('Create') ->
+    create;
+encode_pulse_op('Get') ->
+    get;
+encode_pulse_op('Revoke') ->
+    revoke.

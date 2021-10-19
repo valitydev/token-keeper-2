@@ -53,7 +53,6 @@ init([]) ->
     {AuditChildSpecs, AuditPulse} = get_audit_specs(),
     ServiceOpts = genlib_app:env(?MODULE, services, #{}),
     EventHandlers = genlib_app:env(?MODULE, woody_event_handlers, [woody_event_handler_default]),
-    Healthcheck = enable_health_logging(genlib_app:env(?MODULE, health_check, #{})),
     HandlerChildSpec = woody_server:child_spec(
         ?MODULE,
         #{
@@ -64,7 +63,7 @@ init([]) ->
             shutdown_timeout => get_shutdown_timeout(),
             event_handler => EventHandlers,
             handlers => get_handler_specs(ServiceOpts, AuditPulse),
-            additional_routes => [erl_health_handle:get_route(Healthcheck)]
+            additional_routes => get_additional_routes(EventHandlers)
         }
     ),
     TokensOpts = genlib_app:env(?MODULE, jwt, #{}),
@@ -78,33 +77,27 @@ init([]) ->
         }}.
 
 -spec get_ip_address() -> inet:ip_address().
-
 get_ip_address() ->
     {ok, Address} = inet:parse_address(genlib_app:env(?MODULE, ip, "::")),
     Address.
 
 -spec get_port() -> inet:port_number().
-
 get_port() ->
     genlib_app:env(?MODULE, port, 8022).
 
 -spec get_protocol_opts() -> woody_server_thrift_http_handler:protocol_opts().
-
 get_protocol_opts() ->
     genlib_app:env(?MODULE, protocol_opts, #{}).
 
 -spec get_transport_opts() -> woody_server_thrift_http_handler:transport_opts().
-
 get_transport_opts() ->
     genlib_app:env(?MODULE, transport_opts, #{}).
 
 -spec get_shutdown_timeout() -> timeout().
-
 get_shutdown_timeout() ->
     genlib_app:env(?MODULE, shutdown_timeout, 0).
 
 -spec get_handler_specs(map(), tk_pulse:handlers()) -> [woody:http_handler(woody:th_handler())].
-
 get_handler_specs(ServiceOpts, AuditPulse) ->
     TokenKeeperService = maps:get(token_keeper, ServiceOpts, #{}),
     TokenKeeperPulse = maps:get(pulse, TokenKeeperService, []),
@@ -127,10 +120,21 @@ get_audit_specs() ->
             {[], []}
     end.
 
+-spec get_additional_routes(woody:ev_handlers()) -> machinery_utils:woody_routes().
+get_additional_routes(EventHandlers) ->
+    Check = enable_health_logging(genlib_app:env(?MODULE, health_check, #{})),
+    HealthRoute = erl_health_handle:get_route(Check),
+    case genlib_app:env(?MODULE, storage) of
+        %% TODO: Better storage initialization
+        {machinegun, _} ->
+            [HealthRoute | tk_storage_machinegun:get_routes(#{event_handler => EventHandlers})];
+        _ ->
+            [HealthRoute]
+    end.
+
 %%
 
 -spec enable_health_logging(erl_health:check()) -> erl_health:check().
-
 enable_health_logging(Check) ->
     EvHandler = {erl_health_event_handler, []},
     maps:map(

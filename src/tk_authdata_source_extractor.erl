@@ -5,7 +5,7 @@
 
 %% Behaviour
 
--export([get_authdata/2]).
+-export([get_authdata/3]).
 
 %%
 
@@ -24,8 +24,8 @@
 
 %% Behaviour functions
 
--spec get_authdata(tk_token_jwt:t(), source_opts()) -> extracted_authdata() | undefined.
-get_authdata(Token, Opts) ->
+-spec get_authdata(tk_token_jwt:t(), source_opts(), tk_woody_handler:handle_ctx()) -> extracted_authdata() | undefined.
+get_authdata(Token, Opts, _Ctx) ->
     Methods = get_extractor_methods(Opts),
     case extract_context_with(Methods, Token) of
         {Context, Metadata} ->
