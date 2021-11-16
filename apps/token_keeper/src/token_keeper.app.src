@@ -1,0 +1,22 @@
+{application, token_keeper, [
+    {description, "Token Keeper umbrella app"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {token_keeper, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        genlib,
+        woody,
+        token_keeper_proto,
+        bouncer_client,
+        how_are_you,
+        erl_health,
+        token_authenticator,
+        token_authority
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache 2.0"]},
+    {links, []}
+]}.
