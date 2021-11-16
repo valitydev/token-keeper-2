@@ -6,6 +6,7 @@
 -include_lib("token_keeper_proto/include/tk_token_keeper_thrift.hrl").
 -include_lib("token_keeper_proto/include/tk_context_thrift.hrl").
 
+-include_lib("bouncer_proto/include/bouncer_base_thrift.hrl").
 -include_lib("bouncer_proto/include/bouncer_context_v1_thrift.hrl").
 
 -export([all/0]).
@@ -111,16 +112,8 @@ init_per_group(detect_token = Name, C) ->
     C0 = start_authenticator([
         #{
             id => ?TK_AUTHORITY_KEYCLOAK,
-            token =>
-                {jwt, #{
-                    source => {pem_file, get_filename("keys/local/private.pem", C)}
-                }},
-            storage =>
-                {ephemeral, #{
-                    authdata_sources => [
-                        extract_method_detect_token()
-                    ]
-                }}
+            token => jwt_token("keys/local/private.pem", C),
+            storage => ephemeral_storage([extract_method_detect_token()])
         }
     ]),
     [{groupname, Name} | C0 ++ C];
@@ -128,16 +121,8 @@ init_per_group(invoice_template_access_token = Name, C) ->
     C0 = start_authenticator([
         #{
             id => ?TK_AUTHORITY_CAPI,
-            token =>
-                {jwt, #{
-                    source => {pem_file, get_filename("keys/local/private.pem", C)}
-                }},
-            storage =>
-                {ephemeral, #{
-                    authdata_sources => [
-                        extract_method_invoice_tpl_token()
-                    ]
-                }}
+            token => jwt_token("keys/local/private.pem", C),
+            storage => ephemeral_storage([extract_method_invoice_tpl_token()])
         }
     ]),
     [{groupname, Name} | C0 ++ C];
@@ -145,24 +130,18 @@ init_per_group(claim_only = Name, C) ->
     C0 = start_authenticator([
         #{
             id => ?TK_AUTHORITY_CAPI,
-            token =>
-                {jwt, #{
-                    source => {pem_file, get_filename("keys/local/private.pem", C)}
-                }},
-            storage =>
-                {ephemeral, #{
-                    authdata_sources => [
-                        {claim, #{
-                            compatibility =>
-                                {true, #{
-                                    metadata_mappings => #{
-                                        party_id => ?META_PARTY_ID,
-                                        consumer => ?META_CAPI_CONSUMER
-                                    }
-                                }}
+            token => jwt_token("keys/local/private.pem", C),
+            storage => ephemeral_storage([
+                {claim, #{
+                    compatibility =>
+                        {true, #{
+                            metadata_mappings => #{
+                                party_id => ?META_PARTY_ID,
+                                consumer => ?META_CAPI_CONSUMER
+                            }
                         }}
-                    ]
                 }}
+            ])
         }
     ]),
     [{groupname, Name} | C0 ++ C];
@@ -171,33 +150,18 @@ init_per_group(blacklist = Name, C) ->
         [
             #{
                 id => <<"blacklisting_authority">>,
-                token =>
-                    {jwt, #{
-                        source => {pem_file, get_filename("keys/local/private.pem", C)}
-                    }},
-                storage =>
-                    {ephemeral, #{
-                        authdata_sources => [extract_method_detect_token()]
-                    }}
+                token => jwt_token("keys/local/private.pem", C),
+                storage => ephemeral_storage([extract_method_detect_token()])
             },
             #{
                 id => ?TK_AUTHORITY_CAPI,
-                token =>
-                    {jwt, #{
-                        source => {pem_file, get_filename("keys/secondary/private.pem", C)}
-                    }},
-                storage =>
-                    {ephemeral, #{
-                        authdata_sources => [extract_method_detect_token()]
-                    }}
+                token => jwt_token("keys/secondary/private.pem", C),
+                storage => ephemeral_storage([extract_method_detect_token()])
             }
         ],
         get_filename("blacklisted_keys.yaml", C)
     ),
     [{groupname, Name} | C0 ++ C].
-
-mk_url(IP, Port, Path) ->
-    iolist_to_binary(["http://", IP, ":", genlib:to_binary(Port), Path]).
 
 -spec end_per_group(group_name(), config()) -> _.
 end_per_group(_GroupName, C) ->
@@ -459,7 +423,7 @@ get_service_spec(token_authenticator) ->
 
 %%
 
--define(CTX_ENTITY(ID), #bctx_v1_Entity{id = ID}).
+-define(CTX_ENTITY(ID), #bouncer_base_Entity{id = ID}).
 
 encode_context_fragment_content(ContextFragment) ->
     Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
@@ -570,9 +534,10 @@ start_authenticator(Authorities) ->
     start_authenticator(Authorities, undefined).
 
 start_authenticator(Authorities, BlacklistPath) ->
+    ServicePath = <<"/v2/authenticator">>,
     SupPid = token_authenticator_ct_sup:start_authenticator(#{
         service => #{
-            path => <<"/v2/authenticator">>
+            path => ServicePath
         },
         blacklist => #{
             path => BlacklistPath
@@ -580,9 +545,22 @@ start_authenticator(Authorities, BlacklistPath) ->
         authorities => Authorities
     }),
     Services = #{
-        token_authenticator => mk_url("127.0.0.1", 8022, <<"/v2/authenticator">>)
+        token_authenticator => mk_url("127.0.0.1", 8022, ServicePath)
     },
     [{sup_pid, SupPid}, {service_urls, Services}].
+
+mk_url(IP, Port, Path) ->
+    iolist_to_binary(["http://", IP, ":", genlib:to_binary(Port), Path]).
+
+jwt_token(KeyPath, C) ->
+    {jwt, #{
+        source => {pem_file, get_filename(KeyPath, C)}
+    }}.
+
+ephemeral_storage(Sources) ->
+    {ephemeral, #{
+        authdata_sources => Sources
+    }}.
 
 extract_method_detect_token() ->
     {extract_context, #{
