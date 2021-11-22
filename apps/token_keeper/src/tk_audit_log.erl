@@ -1,8 +1,8 @@
--module(token_keeper_audit_log).
+-module(tk_audit_log).
 
 -export([child_spec/1]).
 
--behaviour(token_keeper_pulse).
+-behaviour(tk_pulse).
 
 -export([handle_beat/3]).
 
@@ -50,7 +50,7 @@
 
 %%
 
--spec child_spec(opts()) -> {ok, supervisor:child_spec(), token_keeper_pulse:handler(st())}.
+-spec child_spec(opts()) -> {ok, supervisor:child_spec(), tk_pulse:handler(st())}.
 child_spec(Opts) ->
     _ = assert_strict_opts(?OPTS, Opts),
     Level = validate_log_level(maps:get(level, Opts, ?DEFAULT_LOG_LEVEL)),
@@ -178,8 +178,8 @@ emit_log_sync(
 
 %%
 
--type beat() :: token_keeper_pulse:beat().
--type metadata() :: token_keeper_pulse:metadata().
+-type beat() :: tk_pulse:beat().
+-type metadata() :: tk_pulse:metadata().
 
 -spec handle_beat(beat(), metadata(), st()) -> ok.
 handle_beat(Beat, Metadata, {DefaultLevel, Formatter}) ->
@@ -260,7 +260,9 @@ encode_error(Other) ->
 extract_metadata(Metadata, Acc) ->
     Acc1 = extract_opt_meta(token, Metadata, fun encode_token/1, Acc),
     Acc2 = extract_opt_meta(source, Metadata, fun encode_token_source/1, Acc1),
-    extract_woody_ctx(maps:get(woody_ctx, Metadata, undefined), Acc2).
+    Acc3 = extract_opt_meta(authority_id, Metadata, fun encode_authority_id/1, Acc2),
+    Acc4 = extract_opt_meta(authdata_id, Metadata, fun encode_authdata_id/1, Acc3),
+    extract_woody_ctx(maps:get(woody_ctx, Metadata, undefined), Acc4).
 
 extract_opt_meta(K, Metadata, EncodeFun, Acc) ->
     case maps:find(K, Metadata) of
@@ -271,12 +273,17 @@ extract_opt_meta(K, Metadata, EncodeFun, Acc) ->
 encode_token(TokenInfo) ->
     #{
         jti => maps:get(id, TokenInfo),
-        payload => maps:get(payload, TokenInfo),
-        authority => maps:get(authority, TokenInfo)
+        payload => maps:get(payload, TokenInfo)
     }.
 
 encode_token_source(TokenSourceContext = #{}) ->
     TokenSourceContext.
+
+encode_authority_id(AuthorityID) when is_binary(AuthorityID) ->
+    AuthorityID.
+
+encode_authdata_id(AuthDataID) when is_binary(AuthDataID) ->
+    AuthDataID.
 
 extract_woody_ctx(WoodyCtx = #{rpc_id := RpcID}, Acc) ->
     extract_woody_meta(WoodyCtx, extract_woody_rpc_id(RpcID, Acc));

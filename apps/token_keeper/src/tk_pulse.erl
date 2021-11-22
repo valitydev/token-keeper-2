@@ -1,13 +1,15 @@
--module(token_keeper_pulse).
+-module(tk_pulse).
 
 -type beat() ::
-    {'Authenticate',
+    {beat_op(),
         started
         | succeeded
         | {failed, _Reason}}.
 
 -type metadata() :: #{
-    token => term(),
+    authdata_id => tk_authdata:id(),
+    authority_id => tk_authdata:authority_id(),
+    token => tk_token:token_data(),
     woody_ctx => woody_context:ctx()
 }.
 
@@ -15,6 +17,8 @@
 -export_type([metadata/0]).
 
 %%
+
+-type beat_op() :: authenticate | create | create_ephemeral | get | revoke.
 
 -type handler() :: {module(), _Opts}.
 -type handler(St) :: {module(), St}.

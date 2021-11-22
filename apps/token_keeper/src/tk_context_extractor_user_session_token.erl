@@ -1,5 +1,5 @@
--module(tktor_context_extractor_user_session_token).
--behaviour(tktor_context_extractor).
+-module(tk_context_extractor_user_session_token).
+-behaviour(tk_context_extractor).
 
 -export([extract_context/2]).
 
@@ -23,7 +23,7 @@
 
 %% API functions
 
--spec extract_context(tktor_token:verified_token(), opts()) -> tktor_context_extractor:extracted_context() | undefined.
+-spec extract_context(tk_token:token_data(), opts()) -> tk_context_extractor:extracted_context() | undefined.
 extract_context(#{id := TokenID, expiration := Expiration, payload := Payload}, Opts) ->
     UserID = maps:get(?CLAIM_USER_ID, Payload),
     Email = maps:get(?CLAIM_USER_EMAIL, Payload),
@@ -64,4 +64,4 @@ make_auth_expiration(Expiration) when Expiration =:= unlimited ->
 
 make_metadata(Metadata, ExtractorOpts) ->
     Mappings = maps:get(metadata_mappings, ExtractorOpts),
-    token_keeper_utils:remap(genlib_map:compact(Metadata), Mappings).
+    tk_utils:remap(genlib_map:compact(Metadata), Mappings).

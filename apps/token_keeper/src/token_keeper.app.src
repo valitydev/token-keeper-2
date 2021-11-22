@@ -1,5 +1,5 @@
 {application, token_keeper, [
-    {description, "Token Keeper umbrella app"},
+    {description, "Keeps tokens"},
     {vsn, "0.1.0"},
     {registered, []},
     {mod, {token_keeper, []}},
@@ -8,12 +8,14 @@
         stdlib,
         genlib,
         woody,
+        jose,
+        snowflake,
         token_keeper_proto,
         bouncer_client,
         how_are_you,
         erl_health,
-        token_authenticator,
-        token_authority
+        machinery,
+        yamerl
     ]},
     {env, []},
     {modules, []},

@@ -1,5 +1,5 @@
--module(tktor_authdata_source_context_extractor).
--behaviour(tktor_authdata_source).
+-module(tk_authdata_source_context_extractor).
+-behaviour(tk_authdata_source).
 
 -include_lib("token_keeper_proto/include/tk_context_thrift.hrl").
 
@@ -10,18 +10,18 @@
 %% API types
 
 -type opts() :: #{
-    methods => tktor_context_extractor:methods()
+    methods => tk_context_extractor:methods()
 }.
 
 -export_type([opts/0]).
 
 %% Internal types
 
--type extracted_authdata() :: tktor_authdata:prototype().
+-type extracted_authdata() :: tk_authdata:prototype().
 
 %% Behaviour functions
 
--spec get_authdata(tktor_token:verified_token(), opts()) -> extracted_authdata() | undefined.
+-spec get_authdata(tk_token:token_data(), opts()) -> extracted_authdata() | undefined.
 get_authdata(VerifiedToken, Opts) ->
     Methods = get_extractor_methods(Opts),
     case extract_context_with(Methods, VerifiedToken) of
@@ -39,7 +39,7 @@ get_extractor_methods(Opts) ->
 extract_context_with([], _VerifiedToken) ->
     undefined;
 extract_context_with([MethodOpts | Rest], VerifiedToken) ->
-    case tktor_context_extractor:extract_context(MethodOpts, VerifiedToken) of
+    case tk_context_extractor:extract_context(MethodOpts, VerifiedToken) of
         AuthData when AuthData =/= undefined ->
             AuthData;
         undefined ->

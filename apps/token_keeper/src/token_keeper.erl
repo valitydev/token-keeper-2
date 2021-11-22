@@ -52,14 +52,9 @@ start_link() ->
 init([]) ->
     {AuditChildSpecs, AuditPulse} = get_audit_specs(),
     EventHandlers = genlib_app:env(?MODULE, woody_event_handlers, [woody_event_handler_default]),
-    [
-        ModuleWoodyHandlers,
-        ModuleChildSpecs,
-        ModuleAdditionalRoutes
-    ] = lists:unzip3([
-        token_authenticator:get_specs(genlib_app:env(?MODULE, token_authenticator), AuditPulse),
-        token_authority:get_specs(genlib_app:env(?MODULE, token_authority), AuditPulse)
-    ]),
+    TokenBlacklistSpec = tk_blacklist:child_spec(genlib_app:env(?MODULE, blacklist, #{})),
+    TokenKeeperConfig = token_keeper_configurator:configure_authorities(genlib_app:env(?MODULE, authorities)),
+    ServicesConfig = genlib_app:env(?MODULE, services),
     HandlerChildSpec = woody_server:child_spec(
         ?MODULE,
         #{
@@ -69,17 +64,121 @@ init([]) ->
             transport_opts => get_transport_opts(),
             shutdown_timeout => get_shutdown_timeout(),
             event_handler => EventHandlers,
-            handlers => ModuleWoodyHandlers,
-            additional_routes => [
-                get_health_route()
-                | ModuleAdditionalRoutes
-            ]
+            handlers => get_woody_handlers(TokenKeeperConfig, ServicesConfig, AuditPulse),
+            additional_routes => [get_health_route() | get_storage_routes(EventHandlers)]
         }
     ),
     {ok, {
         #{strategy => one_for_all, intensity => 6, period => 30},
-        ModuleChildSpecs ++ [HandlerChildSpec | AuditChildSpecs]
+        lists:flatten([
+            AuditChildSpecs,
+            TokenBlacklistSpec,
+            get_additional_childspecs(TokenKeeperConfig),
+            HandlerChildSpec
+        ])
     }}.
+
+%%
+
+get_woody_handlers(TokenKeeperConfig, ServicesConfig, AuditPulse) ->
+    AuthenticatorServiceConfig = maps:get(authenticator, ServicesConfig, #{}),
+    AuthorityServiceConfig = maps:get(authority, ServicesConfig, #{}),
+    #{
+        authenticator_authorities := AuthenticatorAuthorities,
+        authority_handlers := AuthoritiesConfig
+    } = TokenKeeperConfig,
+    [
+        make_authenticator_handler(AuthenticatorAuthorities, AuthenticatorServiceConfig, AuditPulse)
+        | make_authority_handlers(AuthoritiesConfig, AuthorityServiceConfig, AuditPulse)
+    ].
+
+make_authenticator_handler(AuthenticatorAuthorities, ServiceConfig, AuditPulse) ->
+    {
+        maps:get(path, ServiceConfig, <<"/v2/authenticator">>),
+        {
+            {tk_token_keeper_thrift, 'TokenAuthenticator'},
+            {tk_handler, #{
+                handler => {tk_handler_authenticator, #{authorities => AuthenticatorAuthorities}},
+                pulse => AuditPulse
+            }}
+        }
+    }.
+
+make_authority_handlers(AuthoritiesConfig, ServiceConfig, AuditPulse) ->
+    maps:fold(
+        fun(AuthorityID, AuthorityConfig, Acc) ->
+            [make_authority_handler(AuthorityID, AuthorityConfig, ServiceConfig, AuditPulse) | Acc]
+        end,
+        [],
+        AuthoritiesConfig
+    ).
+
+make_authority_handler(AuthorityID, {AuthorityType, AuthorityConf}, ServiceConfig, AuditPulse) ->
+    {
+        make_authority_path(AuthorityID, maps:get(path_prefix, ServiceConfig, <<"/v2/authority">>)),
+        {
+            get_authority_handler_service_name(AuthorityType),
+            {
+                tk_handler,
+                #{
+                    handler =>
+                        {get_authority_handler_mod(AuthorityType),
+                            get_authority_handler_opts(AuthorityType, AuthorityID, AuthorityConf)},
+                    pulse => AuditPulse
+                }
+            }
+        }
+    }.
+
+get_authority_handler_service_name(offline) ->
+    {tk_token_keeper_thrift, 'TokenAuthority'};
+get_authority_handler_service_name(ephemeral) ->
+    {tk_token_keeper_thrift, 'EphemeralTokenAuthority'}.
+
+get_authority_handler_mod(offline) ->
+    tk_handler_authority_offline;
+get_authority_handler_mod(ephemeral) ->
+    tk_handler_authority_ephemeral.
+
+get_authority_handler_opts(_, AuthorityID, _) ->
+    #{
+        authority_id => AuthorityID
+    }.
+
+make_authority_path(AuthorityID, Prefix) ->
+    <<Prefix/binary, "/", AuthorityID/binary>>.
+
+%%
+
+get_additional_childspecs(#{tokens := TokenHandlerConfig}) ->
+    maps:fold(
+        fun(TokenType, TokenOps, Acc) ->
+            [get_token_handler_childspec(TokenType, TokenOps) | Acc]
+        end,
+        [],
+        TokenHandlerConfig
+    ).
+
+get_token_handler_childspec(jwt, Keyset) ->
+    tk_token_jwt:child_spec(Keyset).
+
+get_storage_routes(EventHandlers) ->
+    tk_storage_machinegun:get_routes(#{event_handler => EventHandlers}).
+
+-spec get_health_route() -> machinery_utils:woody_routes().
+get_health_route() ->
+    Check = enable_health_logging(genlib_app:env(?MODULE, health_check, #{})),
+    erl_health_handle:get_route(Check).
+
+-spec enable_health_logging(erl_health:check()) -> erl_health:check().
+enable_health_logging(Check) ->
+    EvHandler = {erl_health_event_handler, []},
+    maps:map(
+        fun(_, Runner) -> #{runner => Runner, event_handler => EvHandler} end,
+        Check
+    ).
+
+%%
 
 -spec get_ip_address() -> inet:ip_address().
 get_ip_address() ->
@@ -102,28 +201,13 @@ get_transport_opts() ->
 get_shutdown_timeout() ->
     genlib_app:env(?MODULE, shutdown_timeout, 0).
 
--spec get_audit_specs() -> {[supervisor:child_spec()], token_keeper_pulse:handlers()}.
+-spec get_audit_specs() -> {[supervisor:child_spec()], tk_pulse:handlers()}.
 get_audit_specs() ->
     Opts = genlib_app:env(?MODULE, audit, #{}),
     case maps:get(log, Opts, #{}) of
         LogOpts = #{} ->
-            {ok, ChildSpec, Pulse} = token_keeper_audit_log:child_spec(LogOpts),
+            {ok, ChildSpec, Pulse} = tk_audit_log:child_spec(LogOpts),
             {[ChildSpec], [Pulse]};
         disable ->
             {[], []}
     end.
-
--spec get_health_route() -> woody_server_thrift_v2:route(_).
-get_health_route() ->
-    Check = enable_health_logging(genlib_app:env(?MODULE, health_check, #{})),
-    erl_health_handle:get_route(Check).
-
-%%
-
--spec enable_health_logging(erl_health:check()) -> erl_health:check().
-enable_health_logging(Check) ->
-    EvHandler = {erl_health_event_handler, []},
-    maps:map(
-        fun(_, Runner) -> #{runner => Runner, event_handler => EvHandler} end,
-        Check
-    ).

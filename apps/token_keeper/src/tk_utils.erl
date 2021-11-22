@@ -1,4 +1,4 @@
--module(token_keeper_utils).
+-module(tk_utils).
 
 -export([remap/2]).
 

@@ -1,11 +1,11 @@
--module(tktor_context_extractor_invoice_tpl_token).
+-module(tk_context_extractor_invoice_tpl_token).
 
 %% NOTE:
 %% This is here because of a historical decision to make InvoiceTemplateAccessToken(s) never expire,
 %% therefore a lot of them do not have a standart bouncer context claim built-in.
 %% It is advisable to get rid of this exctractor when this issue will be solved.
 
--behaviour(tktor_context_extractor).
+-behaviour(tk_context_extractor).
 
 -export([extract_context/2]).
 
@@ -27,7 +27,7 @@
 
 %% API functions
 
--spec extract_context(tktor_token:verified_token(), opts()) -> tktor_context_extractor:extracted_context() | undefined.
+-spec extract_context(tk_token:token_data(), opts()) -> tk_context_extractor:extracted_context() | undefined.
 extract_context(#{id := TokenID, payload := Payload}, Opts) ->
     PartyID = maps:get(?CLAIM_PARTY_ID, Payload),
     case extract_invoice_template_rights(Payload, Opts) of
@@ -88,10 +88,10 @@ get_acl(Domain, Hierarchy, TokenPayload) ->
     case maps:get(?CLAIM_RESOURCE_ACCESS, TokenPayload, undefined) of
         #{Domain := #{<<"roles">> := Roles}} ->
             try
-                TokenACL = tktor_legacy_acl:decode(Roles, Hierarchy),
-                {ok, tktor_legacy_acl:to_list(TokenACL)}
+                TokenACL = tk_legacy_acl:decode(Roles, Hierarchy),
+                {ok, tk_legacy_acl:to_list(TokenACL)}
             catch
-                error:Reason -> {error, {invalid, Reason}}
+                throw:Reason -> {error, {invalid, Reason}}
             end;
         _ ->
             {error, missing}
@@ -114,7 +114,7 @@ create_bouncer_ctx(TokenID, PartyID, InvoiceTemplateID) ->
 
 make_metadata(Metadata, ExtractorOpts) ->
     Mappings = maps:get(metadata_mappings, ExtractorOpts),
-    token_keeper_utils:remap(genlib_map:compact(Metadata), Mappings).
+    tk_utils:remap(genlib_map:compact(Metadata), Mappings).
 
 get_resource_hierarchy() ->
     #{

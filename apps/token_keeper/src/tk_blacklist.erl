@@ -1,10 +1,10 @@
--module(tktor_blacklist).
+-module(tk_blacklist).
 
 -behaviour(supervisor).
 
 %% API
 
--export([is_blacklisted/1]).
+-export([is_blacklisted/2]).
 
 %% Supervisor callbacks
 
@@ -34,8 +34,8 @@ child_spec(Options) ->
         type => supervisor
     }.
 
--spec is_blacklisted(tktor_token:verified_token()) -> boolean().
-is_blacklisted(#{authority := AuthorityID, id := TokenID}) ->
+-spec is_blacklisted(tk_token:token_id(), tk_authdata:authority_id()) -> boolean().
+is_blacklisted(TokenID, AuthorityID) ->
     match_entry(AuthorityID, TokenID, get_entires()).
 
 %%

@@ -1,5 +1,5 @@
--module(tktor_context_extractor_phony_api_key).
--behaviour(tktor_context_extractor).
+-module(tk_context_extractor_phony_api_key).
+-behaviour(tk_context_extractor).
 
 -export([extract_context/2]).
 
@@ -19,7 +19,7 @@
 
 %% API functions
 
--spec extract_context(tktor_token:verified_token(), opts()) -> tktor_context_extractor:extracted_context() | undefined.
+-spec extract_context(tk_token:token_data(), opts()) -> tk_context_extractor:extracted_context() | undefined.
 extract_context(#{id := TokenID, payload := Payload}, Opts) ->
     PartyID = maps:get(?CLAIM_PARTY_ID, Payload),
     ContextFragment = bouncer_context_helpers:add_auth(
@@ -42,4 +42,4 @@ extract_context(#{id := TokenID, payload := Payload}, Opts) ->
 
 make_metadata(Metadata, Opts) ->
     Mappings = maps:get(metadata_mappings, Opts),
-    token_keeper_utils:remap(genlib_map:compact(Metadata), Mappings).
+    tk_utils:remap(genlib_map:compact(Metadata), Mappings).

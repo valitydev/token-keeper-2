@@ -1,5 +1,5 @@
--module(tktor_context_extractor_detect_token).
--behaviour(tktor_context_extractor).
+-module(tk_context_extractor_detect_token).
+-behaviour(tk_context_extractor).
 
 %% Behaviour
 
@@ -8,8 +8,8 @@
 %% API Types
 
 -type opts() :: #{
-    phony_api_key_opts := tktor_context_extractor_phony_api_key:opts(),
-    user_session_token_opts := tktor_context_extractor_user_session_token:opts(),
+    phony_api_key_opts := tk_context_extractor_phony_api_key:opts(),
+    user_session_token_opts := tk_context_extractor_user_session_token:opts(),
     user_session_token_origins := list(binary())
 }.
 
@@ -17,10 +17,10 @@
 
 %% Behaviour
 
--spec extract_context(tktor_token:verified_token(), opts()) -> tktor_context_extractor:extracted_context() | undefined.
+-spec extract_context(tk_token:token_data(), opts()) -> tk_context_extractor:extracted_context() | undefined.
 extract_context(VerifiedToken, Opts) ->
     TokenType = determine_token_type(get_source_context(VerifiedToken), Opts),
-    tktor_context_extractor:extract_context(make_method_opts(TokenType, Opts), VerifiedToken).
+    tk_context_extractor:extract_context(make_method_opts(TokenType, Opts), VerifiedToken).
 
 %% Internal functions
 
