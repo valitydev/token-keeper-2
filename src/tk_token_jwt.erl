@@ -4,14 +4,22 @@
 
 %%
 
--export([child_spec/1]).
 -behaviour(supervisor).
 -export([init/1]).
 
 %%
 
+-behaviour(tk_token).
+-export([child_spec/1]).
 -export([verify/2]).
--export([issue/2]).
+-export([issue/1]).
+
+%%
+
+-type opts() :: #{
+    authority_bindings := authority_bindings(),
+    keyset := keyset()
+}.
 
 -type key_name() :: binary().
 
@@ -19,17 +27,19 @@
     source := keysource()
 }.
 
+-type authority_bindings() :: #{authority_id() => key_name()}.
 -type keyset() :: #{key_name() => key_opts()}.
 
+-export_type([opts/0]).
+-export_type([authority_bindings/0]).
 -export_type([key_name/0]).
 -export_type([key_opts/0]).
 -export_type([keyset/0]).
 
 %%
 
--type keysource() ::
-    {pem_file, file:filename()}.
-
+-type keysource() :: {pem_file, file:filename()}.
+-type authority_id() :: tk_token:authority_id().
 -type source_context() :: tk_token:source_context().
 -type token_data() :: tk_token:token_data().
 -type token_string() :: tk_token:token_string().
@@ -43,9 +53,12 @@
 -define(KEY_BY_KEY_ID(KeyID), ?PTERM_KEY({key_id, KeyID})).
 -define(KEY_BY_KEY_NAME(KeyName), ?PTERM_KEY({key_name, KeyName})).
 
+-define(AUTHORITY_OF_KEY_NAME(KeyName), ?PTERM_KEY({authority_of_keyname, KeyName})).
+-define(KEY_NAME_OF_AUTHORITY(AuthorityID), ?PTERM_KEY({keyname_of_authority, AuthorityID})).
+
 %%
 
--spec child_spec(keyset()) -> supervisor:child_spec() | no_return().
+-spec child_spec(opts()) -> supervisor:child_spec().
 child_spec(TokenOpts) ->
     #{
         id => ?MODULE,
@@ -53,17 +66,20 @@ child_spec(TokenOpts) ->
         type => supervisor
     }.
 
--spec init(keyset()) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
-init(KeySet) ->
+%%
+
+-spec init(opts()) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+init(#{keyset := KeySet, authority_bindings := AuthorityBindings}) ->
     Keys = load_keys(KeySet),
     _ = assert_keys_unique(Keys),
     _ = store_keys(Keys),
+    _ = store_authority_bindings(AuthorityBindings),
     {ok, {#{}, []}}.
 
 %% API functions
 
 -spec verify(token_string(), source_context()) ->
-    {ok, token_data(), key_name()}
+    {ok, token_data()}
     | {error,
         {alg_not_supported, Alg :: atom()}
         | {key_not_found, KID :: atom()}
@@ -72,25 +88,30 @@ init(KeySet) ->
 verify(Token, SourceContext) ->
     case do_verify(Token) of
         {ok, {Claims, KeyName}} ->
-            {ok, construct_token_data(Claims, SourceContext), KeyName};
+            {ok, construct_token_data(Claims, SourceContext, get_authority_of_key_name(KeyName))};
         {error, _} = Error ->
             Error
     end.
 
--spec issue(token_data(), key_name()) ->
+-spec issue(token_data()) ->
     {ok, token_string()}
-    | {error, Reason :: _}.
-issue(TokenData, KeyName) ->
-    case get_key_by_name(KeyName) of
-        #{} = KeyInfo ->
-            case key_supports_signing(KeyInfo) of
-                true ->
-                    {ok, issue_with_key(KeyInfo, TokenData)};
-                false ->
-                    {error, issuing_not_supported}
+    | {error, issuing_not_supported | key_does_not_exist | authority_does_not_exist}.
+issue(#{authority_id := AuthorityID} = TokenData) ->
+    case get_key_name_of_authority(AuthorityID) of
+        KeyName when KeyName =/= undefined ->
+            case get_key_by_name(KeyName) of
+                #{} = KeyInfo ->
+                    case key_supports_signing(KeyInfo) of
+                        true ->
+                            {ok, issue_with_key(KeyInfo, TokenData)};
+                        false ->
+                            {error, issuing_not_supported}
+                    end;
+                undefined ->
+                    {error, key_does_not_exist}
             end;
         undefined ->
-            {error, nonexistent_key}
+            {error, authority_does_not_exist}
     end.
 
 %% Internal functions
@@ -127,9 +148,25 @@ construct_key(KeyID, JWK, KeyName) ->
         jwk => JWK,
         key_id => KeyID,
         key_name => KeyName,
-        verifier => jose_jwk:verifier(JWK),
-        signer => jose_jwk:signer(JWK)
+        verifier => get_verifier(JWK),
+        signer => get_signer(JWK)
     }.
+
+get_signer(JWK) ->
+    try
+        jose_jwk:signer(JWK)
+    catch
+        error:_ ->
+            undefined
+    end.
+
+get_verifier(JWK) ->
+    try
+        jose_jwk:verifier(JWK)
+    catch
+        error:_ ->
+            undefined
+    end.
 
 %%
 
@@ -205,11 +242,13 @@ verify_with_key(ExpandedToken, #{jwk := JWK, key_name := KeyName}) ->
 
 %%
 
-construct_token_data(Claims, SourceContext) ->
+construct_token_data(Claims, SourceContext, AuthorityID) ->
     #{
         id => maps:get(?CLAIM_TOKEN_ID, Claims),
+        type => jwt,
         expiration => decode_expiration(maps:get(?CLAIM_EXPIRES_AT, Claims)),
         payload => Claims,
+        authority_id => AuthorityID,
         source_context => SourceContext
     }.
 
@@ -263,6 +302,22 @@ get_key_by_id(KeyID) ->
 
 get_key_by_name(KeyName) ->
     persistent_term:get(?KEY_BY_KEY_NAME(KeyName), undefined).
+
+%%
+
+store_authority_bindings(AuthorityBindings) ->
+    maps:foreach(fun put_authority_binding/2, AuthorityBindings).
+
+put_authority_binding(KeyName, AuthorityID) ->
+    ok = persistent_term:put(?AUTHORITY_OF_KEY_NAME(KeyName), AuthorityID),
+    ok = persistent_term:put(?KEY_NAME_OF_AUTHORITY(AuthorityID), KeyName),
+    ok.
+
+get_authority_of_key_name(KeyName) ->
+    persistent_term:get(?AUTHORITY_OF_KEY_NAME(KeyName), undefined).
+
+get_key_name_of_authority(AuthorityID) ->
+    persistent_term:get(?KEY_NAME_OF_AUTHORITY(AuthorityID), undefined).
 
 %%
 

@@ -3,7 +3,7 @@
 -include_lib("token_keeper_proto/include/tk_events_thrift.hrl").
 
 %% API
--export([get_routes/1]).
+-export([get_routes/2]).
 
 -behaviour(tk_storage).
 -export([get/3]).
@@ -16,10 +16,17 @@
 -export([process_timeout/3]).
 -export([process_call/4]).
 
--type storage_opts() :: #{}.
--export_type([storage_opts/0]).
+-type storage_opts() :: #{
+    namespace := namespace(),
+    automaton := automaton()
+}.
 
--define(NS, tk_authdata).
+-type processor_opts() :: #{
+    path := binary()
+}.
+
+-export_type([storage_opts/0]).
+-export_type([processor_opts/0]).
 
 %%
 
@@ -28,6 +35,7 @@
 
 -type event_handler() :: woody:ev_handler() | [woody:ev_handler()].
 
+-type namespace() :: atom().
 -type automaton() :: #{
     % machinegun's automaton url
     url := binary(),
@@ -41,19 +49,23 @@
 -type handler_args() :: machinery:handler_args(any()).
 -type handler_opts() :: machinery:handler_args(any()).
 
+%%
+
+-define(MACHINERY_SCHEMA, machinery_mg_schema_generic).
+
 %%-------------------------------------
 %% API
 
--spec get_routes(machinery_utils:route_opts()) -> machinery_utils:woody_routes().
-get_routes(RouteOpts) ->
-    machinery_mg_backend:get_routes([create_handler()], RouteOpts).
+-spec get_routes(processor_opts(), machinery_utils:route_opts()) -> machinery_utils:woody_routes().
+get_routes(ProcessorOpts, RouteOpts) ->
+    machinery_mg_backend:get_routes([create_handler(ProcessorOpts)], RouteOpts).
 
 %%-------------------------------------
 %% tk_storage behaviour implementation
 
 -spec get(authdata_id(), storage_opts(), tk_handler:ctx()) -> {ok, authdata()} | {error, _Reason}.
-get(ID, _Opts, Ctx) ->
-    case machinery:get(?NS, ID, backend(Ctx)) of
+get(ID, #{namespace := Namespace} = Opts, Ctx) ->
+    case machinery:get(Namespace, ID, backend(Opts, Ctx)) of
         {ok, #{history := History}} ->
             {ok, collapse_history(History)};
         {error, _} = Err ->
@@ -61,12 +73,12 @@ get(ID, _Opts, Ctx) ->
     end.
 
 -spec store(authdata(), storage_opts(), tk_handler:ctx()) -> ok | {error, exists}.
-store(#{id := AuthDataID} = AuthData, _Opts, Ctx) ->
-    machinery:start(?NS, AuthDataID, AuthData, backend(Ctx)).
+store(#{id := AuthDataID} = AuthData, #{namespace := Namespace} = Opts, Ctx) ->
+    machinery:start(Namespace, AuthDataID, AuthData, backend(Opts, Ctx)).
 
 -spec revoke(authdata_id(), storage_opts(), tk_handler:ctx()) -> ok | {error, notfound}.
-revoke(ID, _Opts, Ctx) ->
-    case machinery:call(?NS, ID, revoke, backend(Ctx)) of
+revoke(ID, #{namespace := Namespace} = Opts, Ctx) ->
+    case machinery:call(Namespace, ID, revoke, backend(Opts, Ctx)) of
         {ok, _Reply} ->
             ok;
         {error, notfound} = Err ->
@@ -114,24 +126,19 @@ change_status(NewStatus, #{status := _OtherStatus}) ->
 
 %%
 
-create_handler() ->
+create_handler(ProcessorOpts) ->
     {?MODULE, #{
-        path => <<"/v1/stateproc/storage">>,
+        path => maps:get(path, ProcessorOpts),
         backend_config => #{
-            schema => machinery_mg_schema_generic
+            schema => ?MACHINERY_SCHEMA
         }
     }}.
 
-backend(#{woody_context := WC}) ->
-    case genlib_app:env(token_keeper, service_clients, #{}) of
-        #{automaton := Automaton} ->
-            machinery_mg_backend:new(WC, #{
-                client => get_woody_client(Automaton),
-                schema => machinery_mg_schema_generic
-            });
-        #{} ->
-            erlang:error({misconfiguration, {service_clients, automaton}})
-    end.
+backend(#{automaton := Automaton}, #{woody_context := WC}) ->
+    machinery_mg_backend:new(WC, #{
+        client => get_woody_client(Automaton),
+        schema => ?MACHINERY_SCHEMA
+    }).
 
 -spec get_woody_client(automaton()) -> machinery_mg_client:woody_client().
 get_woody_client(#{url := Url} = Automaton) ->

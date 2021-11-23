@@ -15,8 +15,8 @@
 -type authority_opts() :: ephemeral_authority_opts() | external_authorit_opts() | offline_authority_opts().
 
 -type ephemeral_authority_opts() :: {ephemeral, #{}}.
--type external_authorit_opts() :: {external, #{authdata_sources := [tk_authdata_source:authdata_source()]}}.
--type offline_authority_opts() :: {offline, #{}}.
+-type external_authorit_opts() :: {external, #{sources := [tk_authdata_source:authdata_source()]}}.
+-type offline_authority_opts() :: {offline, #{storage_name := tk_storage:storage_name()}}.
 
 -type opts() :: #{
     authorities := authorities()
@@ -30,9 +30,9 @@ handle_function('AddExistingToken', _Args, _Opts, _State) ->
 handle_function('Authenticate' = Op, {Token, TokenSourceContext}, Opts, State) ->
     _ = pulse_op_stated(Op, State),
     case tk_token:verify(Token, decode_source_context(TokenSourceContext)) of
-        {ok, TokenData, AuthorityID} ->
-            State1 = save_pulse_metadata(#{token => TokenData, authority_id => AuthorityID}, State),
-            case get_authdata(TokenData, AuthorityID, Opts, State) of
+        {ok, TokenData} ->
+            State1 = save_pulse_metadata(#{token => TokenData}, State),
+            case get_authdata(TokenData, Opts, State) of
                 {ok, #{status := Status} = AuthDataPrototype} when Status =/= revoked ->
                     EncodedAuthData = encode_auth_data(AuthDataPrototype#{token => Token}),
                     _ = pulse_op_succeeded(Op, State1),
@@ -54,7 +54,7 @@ handle_function('Authenticate' = Op, {Token, TokenSourceContext}, Opts, State) -
 
 %% Internal functions
 
-get_authdata(TokenData, AuthorityID, Opts, State) ->
+get_authdata(TokenData = #{authority_id := AuthorityID}, Opts, State) ->
     case get_authdata_by_authority(get_authority_config(AuthorityID, Opts), TokenData, State) of
         {ok, AuthData} ->
             {ok, maybe_add_authority_id(AuthData, AuthorityID)};
@@ -62,7 +62,7 @@ get_authdata(TokenData, AuthorityID, Opts, State) ->
             Error
     end.
 
-get_authdata_by_authority({external, #{authdata_sources := Sources}}, TokenData, _State) ->
+get_authdata_by_authority({external, #{sources := Sources}}, TokenData, _State) ->
     case get_authdata_from_external_sources(Sources, TokenData) of
         #{} = AuthData ->
             {ok, AuthData};
@@ -72,12 +72,12 @@ get_authdata_by_authority({external, #{authdata_sources := Sources}}, TokenData,
 get_authdata_by_authority({ephemeral, _}, #{payload := TokenPayload}, _State) ->
     case tk_claim_utils:decode_authdata(TokenPayload) of
         {ok, AuthData} ->
-            {ok, AuthData#{status => active}};
+            {ok, AuthData};
         {error, Reason} ->
             {error, Reason}
     end;
-get_authdata_by_authority({offline, _}, #{id := ID}, #{context := Context}) ->
-    tk_storage:get(ID, Context).
+get_authdata_by_authority({offline, #{storage_name := StorageName}}, #{id := ID}, #{context := Context}) ->
+    tk_storage:get(ID, StorageName, Context).
 
 get_authdata_from_external_sources([], _TokenData) ->
     undefined;

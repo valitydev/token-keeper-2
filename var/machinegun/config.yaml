@@ -3,9 +3,9 @@ erlang:
     secret_cookie_file: "/opt/machinegun/etc/cookie"
 
 namespaces:
-    tk_authdata:
+    apikeymgmt:
         processor:
-            url: http://token-keeper:8022/v1/stateproc/storage
+            url: http://token-keeper:8022/v2/stateproc
             pool_size: 300
 
 storage:

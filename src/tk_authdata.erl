@@ -1,6 +1,6 @@
 -module(tk_authdata).
 
--export([create_prototype/4]).
+-export([create_prototype/3]).
 
 %%
 
@@ -27,13 +27,12 @@
 
 %%
 
--spec create_prototype(id() | undefined, encoded_context_fragment(), metadata(), authority_id()) -> prototype().
-create_prototype(ID, ContextFragment, Metadata, Authority) ->
+-spec create_prototype(id() | undefined, encoded_context_fragment(), metadata()) -> prototype().
+create_prototype(ID, ContextFragment, Metadata) ->
     AuthData = #{
         status => active,
         context => ContextFragment,
-        metadata => Metadata,
-        authority => Authority
+        metadata => Metadata
     },
     add_id(AuthData, ID).
 

@@ -12,18 +12,6 @@
 -export([start_link/0]).
 -export([init/1]).
 
-%% API Types
-
--type token() :: binary().
--type token_type() :: api_key_token | user_session_token.
--type token_source() :: #{
-    request_origin => binary()
-}.
-
--export_type([token/0]).
--export_type([token_type/0]).
--export_type([token_source/0]).
-
 %%
 
 -define(SERVER, ?MODULE).
@@ -53,8 +41,8 @@ init([]) ->
     {AuditChildSpecs, AuditPulse} = get_audit_specs(),
     EventHandlers = genlib_app:env(?MODULE, woody_event_handlers, [woody_event_handler_default]),
     TokenBlacklistSpec = tk_blacklist:child_spec(genlib_app:env(?MODULE, blacklist, #{})),
-    TokenKeeperConfig = token_keeper_configurator:configure_authorities(genlib_app:env(?MODULE, authorities)),
-    ServicesConfig = genlib_app:env(?MODULE, services),
+    TokensSpecs = tk_token:child_specs(genlib_app:env(?MODULE, tokens, #{})),
+    StoragesSpecs = tk_storage:child_specs(genlib_app:env(?MODULE, storages, #{})),
     HandlerChildSpec = woody_server:child_spec(
         ?MODULE,
         #{
@@ -64,8 +52,8 @@ init([]) ->
             transport_opts => get_transport_opts(),
             shutdown_timeout => get_shutdown_timeout(),
             event_handler => EventHandlers,
-            handlers => get_woody_handlers(TokenKeeperConfig, ServicesConfig, AuditPulse),
-            additional_routes => [get_health_route() | get_storage_routes(EventHandlers)]
+            handlers => get_woody_handlers(AuditPulse),
+            additional_routes => [get_health_route() | get_machinegun_processor_routes(EventHandlers)]
         }
     ),
     {ok, {
@@ -73,61 +61,61 @@ init([]) ->
         lists:flatten([
             AuditChildSpecs,
             TokenBlacklistSpec,
-            get_additional_childspecs(TokenKeeperConfig),
+            TokensSpecs,
+            StoragesSpecs,
             HandlerChildSpec
         ])
     }}.
 
 %%
 
-get_woody_handlers(TokenKeeperConfig, ServicesConfig, AuditPulse) ->
-    AuthenticatorServiceConfig = maps:get(authenticator, ServicesConfig, #{}),
-    AuthorityServiceConfig = maps:get(authority, ServicesConfig, #{}),
-    #{
-        authenticator_authorities := AuthenticatorAuthorities,
-        authority_handlers := AuthoritiesConfig
-    } = TokenKeeperConfig,
-    [
-        make_authenticator_handler(AuthenticatorAuthorities, AuthenticatorServiceConfig, AuditPulse)
-        | make_authority_handlers(AuthoritiesConfig, AuthorityServiceConfig, AuditPulse)
-    ].
+-spec get_woody_handlers(tk_pulse:handlers()) -> [woody:http_handler(woody:th_handler())].
+get_woody_handlers(AuditPulse) ->
+    lists:flatten([
+        get_authenticator_handler_spec(genlib_app:env(?MODULE, authenticator, #{}), AuditPulse),
+        get_ephemeral_authority_handlers(genlib_app:env(?MODULE, ephemeral_authorities, []), AuditPulse),
+        get_offline_authority_handlers(genlib_app:env(?MODULE, offline_authorities, []), AuditPulse)
+    ]).
 
-make_authenticator_handler(AuthenticatorAuthorities, ServiceConfig, AuditPulse) ->
+-spec get_authenticator_handler_spec(_, tk_pulse:handlers()) -> woody:http_handler(woody:th_handler()).
+get_authenticator_handler_spec(Config, AuditPulse) ->
+    Service = maps:get(service, Config),
+    Authorities = maps:get(authorities, Config, #{}),
     {
-        maps:get(path, ServiceConfig, <<"/v2/authenticator">>),
-        {
+        maps:get(path, Service, <<"/v2/authenticator">>),
+        get_handler_spec(
             {tk_token_keeper_thrift, 'TokenAuthenticator'},
-            {tk_handler, #{
-                handler => {tk_handler_authenticator, #{authorities => AuthenticatorAuthorities}},
-                pulse => AuditPulse
-            }}
-        }
+            {tk_handler_authenticator, #{authorities => Authorities}},
+            AuditPulse
+        )
     }.
 
-make_authority_handlers(AuthoritiesConfig, ServiceConfig, AuditPulse) ->
-    maps:fold(
-        fun(AuthorityID, AuthorityConfig, Acc) ->
-            [make_authority_handler(AuthorityID, AuthorityConfig, ServiceConfig, AuditPulse) | Acc]
+-spec get_ephemeral_authority_handlers(_, tk_pulse:handlers()) -> [woody:http_handler(woody:th_handler())].
+get_ephemeral_authority_handlers(Config, AuditPulse) ->
+    get_authority_handlers(ephemeral, Config, AuditPulse).
+
+-spec get_offline_authority_handlers(_, tk_pulse:handlers()) -> [woody:http_handler(woody:th_handler())].
+get_offline_authority_handlers(Config, AuditPulse) ->
+    get_authority_handlers(offline, Config, AuditPulse).
+
+get_authority_handlers(AuthorityType, Config, AuditPulse) ->
+    lists:foldr(
+        fun(HandlerConf, Acc) ->
+            [get_authority_handler_spec(AuthorityType, HandlerConf, AuditPulse) | Acc]
         end,
         [],
-        AuthoritiesConfig
+        Config
     ).
 
-make_authority_handler(AuthorityID, {AuthorityType, AuthorityConf}, ServiceConfig, AuditPulse) ->
+get_authority_handler_spec(AuthorityType, #{opts := HandlerOpts} = HandlerConf, AuditPulse) ->
+    Service = maps:get(service, HandlerConf),
     {
-        make_authority_path(AuthorityID, maps:get(path_prefix, ServiceConfig, <<"/v2/authority">>)),
-        {
+        maps:get(path, Service),
+        get_handler_spec(
             get_authority_handler_service_name(AuthorityType),
-            {
-                tk_handler,
-                #{
-                    handler =>
-                        {get_authority_handler_mod(AuthorityType),
-                            get_authority_handler_opts(AuthorityType, AuthorityID, AuthorityConf)},
-                    pulse => AuditPulse
-                }
-            }
-        }
+            {get_authority_handler_mod(AuthorityType), HandlerOpts},
+            AuditPulse
+        )
     }.
 
 get_authority_handler_service_name(offline) ->
@@ -140,32 +128,23 @@ get_authority_handler_mod(offline) ->
 get_authority_handler_mod(ephemeral) ->
     tk_handler_authority_ephemeral.
 
-get_authority_handler_opts(_, AuthorityID, _) ->
-    #{
-        authority_id => AuthorityID
-    }.
-
-make_authority_path(AuthorityID, Prefix) ->
-    <<Prefix/binary, "/", AuthorityID/binary>>.
+get_handler_spec(ServiceName, Handler, AuditPulse) ->
+    {ServiceName, {tk_handler, #{handler => Handler, pulse => AuditPulse}}}.
 
 %%
 
-get_additional_childspecs(#{tokens := TokenHandlerConfig}) ->
-    maps:fold(
-        fun(TokenType, TokenOps, Acc) ->
-            [get_token_handler_childspec(TokenType, TokenOps) | Acc]
-        end,
-        [],
-        TokenHandlerConfig
-    ).
+-spec get_machinegun_processor_routes(woody:ev_handlers()) -> [woody_server_thrift_v2:route(_)].
+get_machinegun_processor_routes(EventHandlers) ->
+    case genlib_app:env(?MODULE, machinegun, #{}) of
+        #{processor := ProcessorConf} ->
+            tk_storage_machinegun:get_routes(ProcessorConf, #{event_handler => EventHandlers});
+        #{} ->
+            []
+    end.
 
-get_token_handler_childspec(jwt, Keyset) ->
-    tk_token_jwt:child_spec(Keyset).
+%%
 
-get_storage_routes(EventHandlers) ->
-    tk_storage_machinegun:get_routes(#{event_handler => EventHandlers}).
-
--spec get_health_route() -> machinery_utils:woody_routes().
+-spec get_health_route() -> woody_server_thrift_v2:route(_).
 get_health_route() ->
     Check = enable_health_logging(genlib_app:env(?MODULE, health_check, #{})),
     erl_health_handle:get_route(Check).

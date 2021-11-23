@@ -97,6 +97,7 @@ get_metadata(_Claims) ->
 
 create_authdata(ContextFragment, Metadata) ->
     #{
+        status => active,
         context => ContextFragment,
         metadata => Metadata
     }.

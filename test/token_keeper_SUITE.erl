@@ -134,74 +134,243 @@ init_per_suite(C) ->
 end_per_suite(C) ->
     genlib_app:stop_unload_applications(?CONFIG(suite_apps, C)).
 
+%% @TODO Pending configurator
 -spec init_per_group(group_name(), config()) -> config().
 init_per_group(external_detect_token = Name, C) ->
     C0 = start_keeper([
-        external_authority(
-            ?TK_AUTHORITY_KEYCLOAK,
-            jwt_token("keys/local/private.pem", C),
-            [extract_method_detect_token()]
-        )
+        {authenticator, #{
+            service => #{
+                path => <<"/v2/authenticator">>
+            },
+            authorities => #{
+                ?TK_AUTHORITY_KEYCLOAK =>
+                    {external, #{
+                        sources => [extract_method_detect_token()]
+                    }}
+            }
+        }},
+        {tokens, #{
+            jwt => #{
+                authority_bindings => #{
+                    ?TK_AUTHORITY_KEYCLOAK => ?TK_AUTHORITY_KEYCLOAK
+                },
+                keyset => #{
+                    ?TK_AUTHORITY_KEYCLOAK => #{
+                        source => {pem_file, get_filename("keys/local/public.pem", C)}
+                    }
+                }
+            }
+        }}
     ]),
-    [{groupname, Name} | C0 ++ C];
+    ServiceUrls = #{
+        token_authenticator => mk_url(<<"/v2/authenticator">>)
+    },
+    [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C];
 init_per_group(external_invoice_template_access_token = Name, C) ->
     C0 = start_keeper([
-        external_authority(
-            ?TK_AUTHORITY_CAPI,
-            jwt_token("keys/local/private.pem", C),
-            [extract_method_invoice_tpl_token()]
-        )
+        {authenticator, #{
+            service => #{
+                path => <<"/v2/authenticator">>
+            },
+            authorities => #{
+                ?TK_AUTHORITY_CAPI =>
+                    {external, #{
+                        sources => [extract_method_invoice_tpl_token()]
+                    }}
+            }
+        }},
+        {tokens, #{
+            jwt => #{
+                authority_bindings => #{
+                    ?TK_AUTHORITY_CAPI => ?TK_AUTHORITY_CAPI
+                },
+                keyset => #{
+                    ?TK_AUTHORITY_CAPI => #{
+                        source => {pem_file, get_filename("keys/local/public.pem", C)}
+                    }
+                }
+            }
+        }}
     ]),
-    [{groupname, Name} | C0 ++ C];
+    ServiceUrls = #{
+        token_authenticator => mk_url(<<"/v2/authenticator">>)
+    },
+    [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C];
 init_per_group(external_legacy_claim = Name, C) ->
     C0 = start_keeper([
-        external_authority(
-            ?TK_AUTHORITY_CAPI,
-            jwt_token("keys/local/private.pem", C),
-            [
-                {legacy_claim, #{
-                    metadata_mappings => #{
-                        party_id => ?META_PARTY_ID,
-                        consumer => ?META_CAPI_CONSUMER
+        {authenticator, #{
+            service => #{
+                path => <<"/v2/authenticator">>
+            },
+            authorities => #{
+                ?TK_AUTHORITY_CAPI =>
+                    {external, #{
+                        sources => [
+                            {legacy_claim, #{
+                                metadata_mappings => #{
+                                    party_id => ?META_PARTY_ID,
+                                    consumer => ?META_CAPI_CONSUMER
+                                }
+                            }}
+                        ]
+                    }}
+            }
+        }},
+        {tokens, #{
+            jwt => #{
+                authority_bindings => #{
+                    ?TK_AUTHORITY_CAPI => ?TK_AUTHORITY_CAPI
+                },
+                keyset => #{
+                    ?TK_AUTHORITY_CAPI => #{
+                        source => {pem_file, get_filename("keys/local/public.pem", C)}
                     }
-                }}
-            ]
-        )
+                }
+            }
+        }}
     ]),
-    [{groupname, Name} | C0 ++ C];
+    ServiceUrls = #{
+        token_authenticator => mk_url(<<"/v2/authenticator">>)
+    },
+    [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C];
 init_per_group(blacklist = Name, C) ->
     C0 = start_keeper(
         [
-            external_authority(
-                <<"blacklisting_authority">>,
-                jwt_token("keys/local/private.pem", C),
-                [extract_method_detect_token()]
-            ),
-            external_authority(
-                ?TK_AUTHORITY_CAPI,
-                jwt_token("keys/secondary/private.pem", C),
-                [extract_method_detect_token()]
-            )
+            {authenticator, #{
+                service => #{
+                    path => <<"/v2/authenticator">>
+                },
+                authorities => #{
+                    <<"blacklisting_authority">> =>
+                        {external, #{
+                            sources => [extract_method_detect_token()]
+                        }},
+                    ?TK_AUTHORITY_CAPI =>
+                        {external, #{
+                            sources => [extract_method_detect_token()]
+                        }}
+                }
+            }},
+            {tokens, #{
+                jwt => #{
+                    authority_bindings => #{
+                        <<"blacklisting_authority">> => <<"blacklisting_authority">>,
+                        ?TK_AUTHORITY_CAPI => ?TK_AUTHORITY_CAPI
+                    },
+                    keyset => #{
+                        <<"blacklisting_authority">> => #{
+                            source => {pem_file, get_filename("keys/local/private.pem", C)}
+                        },
+                        ?TK_AUTHORITY_CAPI => #{
+                            source => {pem_file, get_filename("keys/secondary/private.pem", C)}
+                        }
+                    }
+                }
+            }}
         ],
         get_filename("blacklisted_keys.yaml", C)
     ),
-    [{groupname, Name} | C0 ++ C];
+    ServiceUrls = #{
+        token_authenticator => mk_url(<<"/v2/authenticator">>)
+    },
+    [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C];
 init_per_group(ephemeral = Name, C) ->
     C0 = start_keeper([
-        ephemeral_authority(
-            ?TK_AUTHORITY_CAPI,
-            jwt_token("keys/local/private.pem", C)
-        )
+        {authenticator, #{
+            service => #{
+                path => <<"/v2/authenticator">>
+            },
+            authorities => #{
+                ?TK_AUTHORITY_CAPI => {ephemeral, #{}}
+            }
+        }},
+        {ephemeral_authorities, [
+            #{
+                service => #{
+                    path => <<"/v2/authority/com.rbkmoney.access.capi">>
+                },
+                opts => #{
+                    token => #{
+                        type => jwt,
+                        authority_id => ?TK_AUTHORITY_CAPI
+                    }
+                }
+            }
+        ]},
+        {tokens, #{
+            jwt => #{
+                authority_bindings => #{
+                    ?TK_AUTHORITY_CAPI => ?TK_AUTHORITY_CAPI
+                },
+                keyset => #{
+                    ?TK_AUTHORITY_CAPI => #{
+                        source => {pem_file, get_filename("keys/local/private.pem", C)}
+                    }
+                }
+            }
+        }}
     ]),
-    [{groupname, Name} | C0 ++ C];
+    ServiceUrls = #{
+        token_authenticator => mk_url(<<"/v2/authenticator">>),
+        {token_ephemeral_authority, ?TK_AUTHORITY_CAPI} => mk_url(<<"/v2/authority/com.rbkmoney.access.capi">>)
+    },
+    [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C];
 init_per_group(offline = Name, C) ->
     C0 = start_keeper([
-        offline_authority(
-            ?TK_AUTHORITY_APIKEYMGMT,
-            jwt_token("keys/local/private.pem", C)
-        )
+        {authenticator, #{
+            service => #{
+                path => <<"/v2/authenticator">>
+            },
+            authorities => #{
+                ?TK_AUTHORITY_APIKEYMGMT =>
+                    {offline, #{
+                        storage_name => ?TK_AUTHORITY_APIKEYMGMT
+                    }}
+            }
+        }},
+        {offline_authorities, [
+            #{
+                service => #{
+                    path => <<"/v2/authority/com.rbkmoney.apikemgmt">>
+                },
+                opts => #{
+                    token => #{
+                        type => jwt,
+                        authority_id => ?TK_AUTHORITY_APIKEYMGMT
+                    },
+                    storage_name => ?TK_AUTHORITY_APIKEYMGMT
+                }
+            }
+        ]},
+        {tokens, #{
+            jwt => #{
+                authority_bindings => #{
+                    ?TK_AUTHORITY_APIKEYMGMT => ?TK_AUTHORITY_APIKEYMGMT
+                },
+                keyset => #{
+                    ?TK_AUTHORITY_APIKEYMGMT => #{
+                        source => {pem_file, get_filename("keys/local/private.pem", C)}
+                    }
+                }
+            }
+        }},
+        {storages, #{
+            ?TK_AUTHORITY_APIKEYMGMT =>
+                {machinegun, #{
+                    namespace => apikeymgmt,
+                    automaton => #{
+                        url => <<"http://machinegun:8022/v1/automaton">>,
+                        event_handler => [scoper_woody_event_handler],
+                        transport_opts => #{}
+                    }
+                }}
+        }}
     ]),
-    [{groupname, Name} | C0 ++ C].
+    ServiceUrls = #{
+        token_authenticator => mk_url(<<"/v2/authenticator">>),
+        {token_authority, ?TK_AUTHORITY_APIKEYMGMT} => mk_url(<<"/v2/authority/com.rbkmoney.apikemgmt">>)
+    },
+    [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C].
 
 -spec end_per_group(group_name(), config()) -> _.
 end_per_group(_GroupName, C) ->
@@ -728,92 +897,32 @@ unique_id() ->
 start_keeper(Authorities) ->
     start_keeper(Authorities, undefined).
 
-start_keeper(Authorities, BlacklistPath) ->
-    AuthenticatorServicePath = <<"/v2/authenticator">>,
-    AuthorityServicePrefix = <<"/v2/authority">>,
-    IP = "127.0.0.1",
+start_keeper(Env, BlacklistPath) ->
     Port = 8022,
     Apps = genlib_app:start_application_with(
         token_keeper,
         [
             {port, Port},
-            {services, #{
-                authenticator => #{
-                    path => AuthenticatorServicePath
-                },
-                authority => #{
-                    path_prefix => AuthorityServicePrefix
-                }
-            }},
-            {service_clients, #{
-                automaton => #{
-                    url => <<"http://machinegun:8022/v1/automaton">>
-                }
-            }},
             {blacklist, #{
                 path => BlacklistPath
             }},
-            {authorities, Authorities}
-        ]
+            {machinegun, #{
+                processor => #{
+                    path => <<"/v2/stateproc">>
+                }
+            }}
+        ] ++ Env
     ),
-    Services = maps:merge(
-        make_authority_service_urls(IP, Port, AuthorityServicePrefix, Authorities),
-        #{
-            token_authenticator => mk_url(IP, Port, AuthenticatorServicePath)
-        }
-    ),
-    [{keeper_apps, Apps}, {service_urls, Services}].
+    [{keeper_apps, Apps}].
 
 stop_keeper(C) ->
     genlib_app:stop_unload_applications(?CONFIG(keeper_apps, C)).
 
-make_authority_service_urls(IP, Port, AuthorityServicePrefix, Authorities) ->
-    lists:foldr(
-        fun
-            ({external, _}, Acc) ->
-                Acc;
-            ({Type, #{id := AuthorityID}}, Acc) ->
-                Path = make_authority_path(AuthorityID, AuthorityServicePrefix),
-                Acc#{{service_url_key_by_authority_type(Type), AuthorityID} => mk_url(IP, Port, Path)}
-        end,
-        #{},
-        Authorities
-    ).
-
-service_url_key_by_authority_type(offline) ->
-    token_authority;
-service_url_key_by_authority_type(ephemeral) ->
-    token_ephemeral_authority.
-
-make_authority_path(AuthorityID, Prefix) ->
-    <<Prefix/binary, "/", AuthorityID/binary>>.
+mk_url(Path) ->
+    mk_url("127.0.0.1", 8022, Path).
 
 mk_url(IP, Port, Path) ->
     iolist_to_binary(["http://", IP, ":", genlib:to_binary(Port), Path]).
-
-jwt_token(KeyPath, C) ->
-    {jwt, #{
-        source => {pem_file, get_filename(KeyPath, C)}
-    }}.
-
-external_authority(ID, TokenType, AuthdataSources) ->
-    {external, #{
-        id => ID,
-        token => TokenType,
-        authdata_sources => AuthdataSources
-    }}.
-
-ephemeral_authority(ID, TokenType) ->
-    {ephemeral, #{
-        id => ID,
-        token => TokenType
-    }}.
-
-offline_authority(ID, TokenType) ->
-    {offline, #{
-        id => ID,
-        token => TokenType
-    }}.
 
 extract_method_detect_token() ->
     {extract_context, #{
