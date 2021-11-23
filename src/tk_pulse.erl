@@ -1,10 +1,12 @@
 -module(tk_pulse).
 
 -type beat() ::
-    {beat_op(),
+    {
+        beat_op(),
         started
         | succeeded
-        | {failed, _Reason}}.
+        | {failed, _Reason}
+    }.
 
 -type metadata() :: #{
     authdata_id => tk_authdata:id(),
