@@ -233,12 +233,15 @@ log_allowed(Level) ->
 
 %%
 
-get_level({get_by_token, started}, _Level) -> log_allowed(debug);
-get_level({create_ephemeral, started}, _Level) -> log_allowed(debug);
+get_level({authenticate, started}, _Level) -> log_allowed(debug);
 get_level(_, Level) -> Level.
 
-get_message({Op, {failed, _}}) -> get_message({Op, failed});
-get_message({Op, Event}) -> iolist_to_binary([atom_to_binary(Op), <<" ">>, atom_to_binary(Event)]).
+get_message({Op, {failed, _}}) ->
+    get_message({Op, failed});
+get_message({Op, Event}) ->
+    EncodedOp = iolist_to_binary(encode_op(Op)),
+    EncodedEvent = atom_to_binary(Event),
+    <<EncodedOp/binary, " ", EncodedEvent/binary>>.
 
 get_beat_metadata({Op, Event}) ->
     #{Op => build_event(Event)}.
@@ -251,6 +254,11 @@ build_event({failed, Error}) ->
 build_event(Event) ->
     #{event => Event}.
 
+encode_op(Op) when is_atom(Op) ->
+    [atom_to_binary(Op)];
+encode_op({Namespace, Sub}) ->
+    [atom_to_binary(Namespace), <<":">> | encode_op(Sub)].
+
 encode_error({Class, Details}) when is_atom(Class) ->
     #{class => Class, details => genlib:format(Details)};
 encode_error(Class) when is_atom(Class) ->
@@ -261,7 +269,9 @@ encode_error(Other) ->
 extract_metadata(Metadata, Acc) ->
     Acc1 = extract_opt_meta(token, Metadata, fun encode_token/1, Acc),
     Acc2 = extract_opt_meta(source, Metadata, fun encode_token_source/1, Acc1),
-    extract_woody_ctx(maps:get(woody_ctx, Metadata, undefined), Acc2).
+    Acc3 = extract_opt_meta(authority_id, Metadata, fun encode_authority_id/1, Acc2),
+    Acc4 = extract_opt_meta(authdata_id, Metadata, fun encode_authdata_id/1, Acc3),
+    extract_woody_ctx(maps:get(woody_ctx, Metadata, undefined), Acc4).
 
 extract_opt_meta(K, Metadata, EncodeFun, Acc) ->
     case maps:find(K, Metadata) of
@@ -271,14 +281,18 @@ extract_opt_meta(K, Metadata, EncodeFun, Acc) ->
 
 encode_token(TokenInfo) ->
     #{
-        jti => tk_token_jwt:get_token_id(TokenInfo),
-        claims => tk_token_jwt:get_claims(TokenInfo),
-        authority => tk_token_jwt:get_authority(TokenInfo),
-        metadata => tk_token_jwt:get_metadata(TokenInfo)
+        jti => maps:get(id, TokenInfo),
+        payload => maps:get(payload, TokenInfo)
     }.
 
 encode_token_source(TokenSourceContext = #{}) ->
     TokenSourceContext.
+
+encode_authority_id(AuthorityID) when is_binary(AuthorityID) ->
+    AuthorityID.
+
+encode_authdata_id(AuthDataID) when is_binary(AuthDataID) ->
+    AuthDataID.
 
 extract_woody_ctx(WoodyCtx = #{rpc_id := RpcID}, Acc) ->
     extract_woody_meta(WoodyCtx, extract_woody_rpc_id(RpcID, Acc));

@@ -1,4 +1,4 @@
--module(tk_authdata_source_extractor).
+-module(tk_authdata_source_context_extractor).
 -behaviour(tk_authdata_source).
 
 -include_lib("token_keeper_proto/include/tk_context_thrift.hrl").
@@ -7,47 +7,43 @@
 
 -export([get_authdata/3]).
 
-%%
+%% API types
 
--type extracted_authdata() :: #{
-    status := tk_authority:status(),
-    context := tk_authority:encoded_context_fragment(),
-    metadata => tk_authority:metadata()
+-type opts() :: #{
+    methods => tk_context_extractor:methods()
 }.
 
--type source_opts() :: #{
-    methods => tk_extractor:methods()
-}.
+-export_type([opts/0]).
 
--export_type([extracted_authdata/0]).
--export_type([source_opts/0]).
+%% Internal types
+
+-type authdata() :: tk_authdata:prototype().
 
 %% Behaviour functions
 
--spec get_authdata(tk_token_jwt:t(), source_opts(), tk_woody_handler:handle_ctx()) -> extracted_authdata() | undefined.
-get_authdata(Token, Opts, _Ctx) ->
+-spec get_authdata(tk_token:token_data(), opts(), woody_context:ctx()) -> authdata() | undefined.
+get_authdata(VerifiedToken, Opts, _Context) ->
     Methods = get_extractor_methods(Opts),
-    case extract_context_with(Methods, Token) of
+    case extract_context_with(Methods, VerifiedToken) of
         {Context, Metadata} ->
             make_auth_data(Context, Metadata);
         undefined ->
             undefined
     end.
 
-%%
+%% Internal functions
 
 get_extractor_methods(Opts) ->
     maps:get(methods, Opts).
 
-extract_context_with([], _Token) ->
+extract_context_with([], _VerifiedToken) ->
     undefined;
-extract_context_with([MethodOpts | Rest], Token) ->
-    {Method, Opts} = get_method_opts(MethodOpts),
-    case tk_extractor:get_context(Method, Token, Opts) of
+extract_context_with([MethodOpts | Rest], VerifiedToken) ->
+    case tk_context_extractor:extract_context(MethodOpts, VerifiedToken) of
         AuthData when AuthData =/= undefined ->
             AuthData;
         undefined ->
-            extract_context_with(Rest, Token)
+            extract_context_with(Rest, VerifiedToken)
     end.
 
 make_auth_data(ContextFragment, Metadata) ->
@@ -70,8 +66,3 @@ encode_context_fragment_content(ContextFragment) ->
         {ok, Codec1} ->
             thrift_strict_binary_codec:close(Codec1)
     end.
-
-get_method_opts({_Method, _Opts} = MethodOpts) ->
-    MethodOpts;
-get_method_opts(Method) when is_atom(Method) ->
-    {Method, #{}}.

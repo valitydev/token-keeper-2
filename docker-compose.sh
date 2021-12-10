@@ -19,8 +19,8 @@ services:
     image: dr2.rbkmoney.com/rbkmoney/machinegun:9c3248a68fe530d23a8266057a40a1a339a161b8
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
-      - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
-      - ./test/machinegun/cookie:/opt/machinegun/etc/cookie
+      - ./var/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
+      - ./var/machinegun/cookie:/opt/machinegun/etc/cookie
     healthcheck:
       test: "curl http://localhost:8022/"
       interval: 5s

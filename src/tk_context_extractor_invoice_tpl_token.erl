@@ -1,42 +1,47 @@
--module(tk_extractor_invoice_tpl_token).
+-module(tk_context_extractor_invoice_tpl_token).
 
 %% NOTE:
 %% This is here because of a historical decision to make InvoiceTemplateAccessToken(s) never expire,
 %% therefore a lot of them do not have a standart bouncer context claim built-in.
 %% It is advisable to get rid of this exctractor when this issue will be solved.
 
--behaviour(tk_extractor).
+-behaviour(tk_context_extractor).
 
--export([get_context/2]).
+-export([extract_context/2]).
 
 %%
 
--type extractor_opts() :: #{
+-type opts() :: #{
     domain := binary(),
     metadata_mappings := #{
         party_id := binary()
     }
 }.
 
--export_type([extractor_opts/0]).
+-export_type([opts/0]).
+
+%%
+
+-define(CLAIM_PARTY_ID, <<"sub">>).
+-define(CLAIM_RESOURCE_ACCESS, <<"resource_access">>).
 
 %% API functions
 
--spec get_context(tk_token_jwt:t(), extractor_opts()) -> tk_extractor:extracted_context().
-get_context(Token, ExtractorOpts) ->
-    UserID = tk_token_jwt:get_subject_id(Token),
-    case extract_invoice_template_rights(Token, ExtractorOpts) of
+-spec extract_context(tk_token:token_data(), opts()) -> tk_context_extractor:extracted_context() | undefined.
+extract_context(#{id := TokenID, payload := Payload}, Opts) ->
+    PartyID = maps:get(?CLAIM_PARTY_ID, Payload),
+    case extract_invoice_template_rights(Payload, Opts) of
         {ok, InvoiceTemplateID} ->
-            BCtx = create_bouncer_ctx(tk_token_jwt:get_token_id(Token), UserID, InvoiceTemplateID),
+            BCtx = create_bouncer_ctx(TokenID, PartyID, InvoiceTemplateID),
             {BCtx,
                 make_metadata(
                     #{
                         %% @TEMP: This is a temporary hack.
                         %% When some external services will stop requiring woody user
                         %% identity to be present it must be removed too
-                        party_id => tk_token_jwt:get_subject_id(Token)
+                        party_id => PartyID
                     },
-                    ExtractorOpts
+                    Opts
                 )};
         {error, Reason} ->
             _ = logger:warning("Failed to extract invoice template rights: ~p", [Reason]),
@@ -45,9 +50,9 @@ get_context(Token, ExtractorOpts) ->
 
 %%
 
-extract_invoice_template_rights(TokenContext, ExtractorOpts) ->
-    Domain = maps:get(domain, ExtractorOpts),
-    case get_acl(Domain, get_resource_hierarchy(), TokenContext) of
+extract_invoice_template_rights(TokenPayload, Opts) ->
+    Domain = maps:get(domain, Opts),
+    case get_acl(Domain, get_resource_hierarchy(), TokenPayload) of
         {ok, TokenACL} ->
             match_invoice_template_acl(TokenACL);
         {error, Reason} ->
@@ -79,27 +84,27 @@ run_pattern(Entry, Pat) when is_function(Pat, 1) ->
         error:function_clause -> []
     end.
 
-get_acl(Domain, Hierarchy, TokenContext) ->
-    case tk_token_jwt:get_claim(<<"resource_access">>, TokenContext, undefined) of
+get_acl(Domain, Hierarchy, TokenPayload) ->
+    case maps:get(?CLAIM_RESOURCE_ACCESS, TokenPayload, undefined) of
         #{Domain := #{<<"roles">> := Roles}} ->
             try
-                TokenACL = tk_token_legacy_acl:decode(Roles, Hierarchy),
-                {ok, tk_token_legacy_acl:to_list(TokenACL)}
+                TokenACL = tk_legacy_acl:decode(Roles, Hierarchy),
+                {ok, tk_legacy_acl:to_list(TokenACL)}
             catch
-                error:Reason -> {error, {invalid, Reason}}
+                throw:Reason -> {error, {invalid, Reason}}
             end;
         _ ->
             {error, missing}
     end.
 
-create_bouncer_ctx(TokenID, UserID, InvoiceTemplateID) ->
+create_bouncer_ctx(TokenID, PartyID, InvoiceTemplateID) ->
     bouncer_context_helpers:add_auth(
         #{
             method => <<"InvoiceTemplateAccessToken">>,
             token => #{id => TokenID},
             scope => [
                 #{
-                    party => #{id => UserID},
+                    party => #{id => PartyID},
                     invoice_template => #{id => InvoiceTemplateID}
                 }
             ]

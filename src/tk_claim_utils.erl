@@ -1,29 +1,20 @@
--module(tk_token_claim_utils).
+-module(tk_claim_utils).
 
 -include_lib("token_keeper_proto/include/tk_context_thrift.hrl").
 
--export([decode_authdata/2]).
+-export([decode_authdata/1]).
 -export([encode_authdata/1]).
 
--type decode_opts() :: #{
-    compatibility => {true, compatibility_opts()} | false
-}.
-
--type compatibility_opts() :: #{
-    metadata_mappings := #{
-        party_id := binary(),
-        token_consumer := binary()
-    }
-}.
-
--export_type([decode_opts/0]).
--export_type([compatibility_opts/0]).
+-export([decode_bouncer_claim/1]).
+-export([encode_bouncer_claim/1]).
 
 %%
 
--type storable_authdata() :: tk_storage:storable_authdata().
--type claim() :: tk_token_jwt:claim().
--type claims() :: tk_token_jwt:claims().
+-type authdata() :: tk_authdata:prototype().
+-type encoded_context_fragment() :: tk_context_thrift:'ContextFragment'().
+
+-type claim() :: term().
+-type claims() :: tk_token:payload().
 
 -define(CLAIM_BOUNCER_CTX, <<"bouncer_ctx">>).
 -define(CLAIM_TK_METADATA, <<"tk_metadata">>).
@@ -34,13 +25,13 @@
 
 %%
 
--spec decode_authdata(claims(), decode_opts()) ->
-    {ok, storable_authdata()}
+-spec decode_authdata(claims()) ->
+    {ok, authdata()}
     | {error, not_found | {claim_decode_error, {unsupported, claim()} | {malformed, binary()}}}.
-decode_authdata(#{?CLAIM_BOUNCER_CTX := BouncerClaim} = Claims, Opts) ->
+decode_authdata(#{?CLAIM_BOUNCER_CTX := BouncerClaim} = Claims) ->
     case decode_bouncer_claim(BouncerClaim) of
         {ok, ContextFragment} ->
-            case get_metadata(Claims, Opts) of
+            case get_metadata(Claims) of
                 {ok, Metadata} ->
                     {ok, create_authdata(ContextFragment, Metadata)};
                 {error, no_metadata_claim} ->
@@ -49,10 +40,10 @@ decode_authdata(#{?CLAIM_BOUNCER_CTX := BouncerClaim} = Claims, Opts) ->
         {error, Reason} ->
             {error, {claim_decode_error, Reason}}
     end;
-decode_authdata(_Claims, _Opts) ->
+decode_authdata(_Claims) ->
     {error, not_found}.
 
--spec encode_authdata(storable_authdata()) -> claims().
+-spec encode_authdata(authdata()) -> claims().
 encode_authdata(#{context := ContextFragment} = AuthData) ->
     #{
         ?CLAIM_BOUNCER_CTX => encode_bouncer_claim(ContextFragment),
@@ -61,6 +52,7 @@ encode_authdata(#{context := ContextFragment} = AuthData) ->
 
 %%
 
+-spec decode_bouncer_claim(claims()) -> {ok, encoded_context_fragment()} | {error, {malformed, binary()}}.
 decode_bouncer_claim(#{
     ?CLAIM_CTX_TYPE := ?CLAIM_CTX_TYPE_V1_THRIFT_BINARY,
     ?CLAIM_CTX_CONTEXT := Content
@@ -79,6 +71,7 @@ decode_bouncer_claim(#{
 decode_bouncer_claim(Ctx) ->
     {error, {unsupported, Ctx}}.
 
+-spec encode_bouncer_claim(encoded_context_fragment()) -> claims().
 encode_bouncer_claim(
     #bctx_ContextFragment{
         type = v1_thrift_binary,
@@ -90,30 +83,21 @@ encode_bouncer_claim(
         ?CLAIM_CTX_CONTEXT => base64:encode(Content)
     }.
 
+%%
+
 encode_metadata(#{metadata := Metadata}) ->
     Metadata;
 encode_metadata(#{}) ->
     #{}.
 
-get_metadata(#{?CLAIM_TK_METADATA := Metadata}, _Opts) ->
+get_metadata(#{?CLAIM_TK_METADATA := Metadata}) ->
     {ok, Metadata};
-get_metadata(Claims, #{compatibility := {true, CompatOpts}}) ->
-    {ok, create_metadata(Claims, CompatOpts)};
-get_metadata(_Claims, _Opts) ->
+get_metadata(_Claims) ->
     {error, no_metadata_claim}.
 
 create_authdata(ContextFragment, Metadata) ->
-    genlib_map:compact(#{
+    #{
         status => active,
         context => ContextFragment,
         metadata => Metadata
-    }).
-
-create_metadata(Claims, CompatOpts) ->
-    Metadata = #{
-        %% TODO: This is a temporary hack.
-        %% When some external services will stop requiring woody user identity to be present it must be removed too
-        party_id => maps:get(<<"sub">>, Claims, undefined),
-        consumer => maps:get(<<"cons">>, Claims, undefined)
-    },
-    tk_utils:remap(genlib_map:compact(Metadata), maps:get(metadata_mappings, CompatOpts)).
+    }.

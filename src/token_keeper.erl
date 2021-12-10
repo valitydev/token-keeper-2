@@ -12,18 +12,6 @@
 -export([start_link/0]).
 -export([init/1]).
 
-%% API Types
-
--type token() :: binary().
--type token_type() :: api_key_token | user_session_token.
--type token_source() :: #{
-    request_origin => binary()
-}.
-
--export_type([token/0]).
--export_type([token_type/0]).
--export_type([token_source/0]).
-
 %%
 
 -define(SERVER, ?MODULE).
@@ -51,8 +39,10 @@ start_link() ->
 -spec init(Args :: term()) -> genlib_gen:supervisor_ret().
 init([]) ->
     {AuditChildSpecs, AuditPulse} = get_audit_specs(),
-    ServiceOpts = genlib_app:env(?MODULE, services, #{}),
     EventHandlers = genlib_app:env(?MODULE, woody_event_handlers, [woody_event_handler_default]),
+    TokenBlacklistSpec = tk_blacklist:child_spec(genlib_app:env(?MODULE, blacklist, #{})),
+    TokensSpecs = tk_token:child_specs(genlib_app:env(?MODULE, tokens, #{})),
+    StoragesSpecs = tk_storage:child_specs(genlib_app:env(?MODULE, storages, #{})),
     HandlerChildSpec = woody_server:child_spec(
         ?MODULE,
         #{
@@ -62,19 +52,69 @@ init([]) ->
             transport_opts => get_transport_opts(),
             shutdown_timeout => get_shutdown_timeout(),
             event_handler => EventHandlers,
-            handlers => get_handler_specs(ServiceOpts, AuditPulse),
-            additional_routes => get_additional_routes(EventHandlers)
+            handlers => get_woody_handlers(AuditPulse),
+            additional_routes => [get_health_route() | get_machinegun_processor_routes(EventHandlers)]
         }
     ),
-    TokensOpts = genlib_app:env(?MODULE, jwt, #{}),
-    TokensChildSpec = tk_token_jwt:child_spec(TokensOpts),
-    TokenBlacklistOpts = genlib_app:env(?MODULE, blacklist, #{}),
-    TokenBlacklistSpec = tk_token_blacklist:child_spec(TokenBlacklistOpts),
-    {ok,
-        {
-            #{strategy => one_for_all, intensity => 6, period => 30},
-            [HandlerChildSpec, TokensChildSpec, TokenBlacklistSpec | AuditChildSpecs]
-        }}.
+    {ok, {
+        #{strategy => one_for_all, intensity => 6, period => 30},
+        lists:flatten([
+            AuditChildSpecs,
+            TokenBlacklistSpec,
+            TokensSpecs,
+            StoragesSpecs,
+            HandlerChildSpec
+        ])
+    }}.
+
+%%
+
+-spec get_woody_handlers(tk_pulse:handlers()) -> [woody:http_handler(woody:th_handler())].
+get_woody_handlers(AuditPulse) ->
+    lists:flatten([
+        get_authenticator_handler(genlib_app:env(?MODULE, authenticator, #{}), AuditPulse),
+        get_authority_handler(genlib_app:env(?MODULE, authorities, #{}), AuditPulse)
+    ]).
+
+get_authenticator_handler(Config, AuditPulse) ->
+    tk_handler:get_authenticator_handler(Config, AuditPulse).
+
+get_authority_handler(Authorities, AuditPulse) ->
+    maps:fold(
+        fun(AuthorityID, AuthorityOpts, Acc) ->
+            [tk_handler:get_authority_handler(AuthorityID, AuthorityOpts, AuditPulse) | Acc]
+        end,
+        [],
+        Authorities
+    ).
+
+%%
+
+-spec get_machinegun_processor_routes(woody:ev_handlers()) -> [woody_server_thrift_v2:route(_)].
+get_machinegun_processor_routes(EventHandlers) ->
+    case genlib_app:env(?MODULE, machinegun, #{}) of
+        #{processor := ProcessorConf} ->
+            tk_storage_machinegun:get_routes(ProcessorConf, #{event_handler => EventHandlers});
+        #{} ->
+            []
+    end.
+
+%%
+
+-spec get_health_route() -> woody_server_thrift_v2:route(_).
+get_health_route() ->
+    Check = enable_health_logging(genlib_app:env(?MODULE, health_check, #{})),
+    erl_health_handle:get_route(Check).
+
+-spec enable_health_logging(erl_health:check()) -> erl_health:check().
+enable_health_logging(Check) ->
+    EvHandler = {erl_health_event_handler, []},
+    maps:map(
+        fun(_, Runner) -> #{runner => Runner, event_handler => EvHandler} end,
+        Check
+    ).
+
+%%
 
 -spec get_ip_address() -> inet:ip_address().
 get_ip_address() ->
@@ -97,18 +137,6 @@ get_transport_opts() ->
 get_shutdown_timeout() ->
     genlib_app:env(?MODULE, shutdown_timeout, 0).
 
--spec get_handler_specs(map(), tk_pulse:handlers()) -> [woody:http_handler(woody:th_handler())].
-get_handler_specs(ServiceOpts, AuditPulse) ->
-    TokenKeeperService = maps:get(token_keeper, ServiceOpts, #{}),
-    TokenKeeperPulse = maps:get(pulse, TokenKeeperService, []),
-    TokenKeeperOpts = #{pulse => AuditPulse ++ TokenKeeperPulse},
-    [
-        {
-            maps:get(path, TokenKeeperService, <<"/v1/token-keeper">>),
-            {{tk_token_keeper_thrift, 'TokenKeeper'}, {tk_woody_handler, TokenKeeperOpts}}
-        }
-    ].
-
 -spec get_audit_specs() -> {[supervisor:child_spec()], tk_pulse:handlers()}.
 get_audit_specs() ->
     Opts = genlib_app:env(?MODULE, audit, #{}),
@@ -119,25 +147,3 @@ get_audit_specs() ->
         disable ->
             {[], []}
     end.
-
--spec get_additional_routes(woody:ev_handlers()) -> machinery_utils:woody_routes().
-get_additional_routes(EventHandlers) ->
-    Check = enable_health_logging(genlib_app:env(?MODULE, health_check, #{})),
-    HealthRoute = erl_health_handle:get_route(Check),
-    case genlib_app:env(?MODULE, storage) of
-        %% TODO: Better storage initialization
-        {machinegun, _} ->
-            [HealthRoute | tk_storage_machinegun:get_routes(#{event_handler => EventHandlers})];
-        _ ->
-            [HealthRoute]
-    end.
-
-%%
-
--spec enable_health_logging(erl_health:check()) -> erl_health:check().
-enable_health_logging(Check) ->
-    EvHandler = {erl_health_event_handler, []},
-    maps:map(
-        fun(_, Runner) -> #{runner => Runner, event_handler => EvHandler} end,
-        Check
-    ).

@@ -1,4 +1,4 @@
--module(tk_token_legacy_acl).
+-module(tk_legacy_acl).
 
 %%
 
@@ -48,7 +48,7 @@ decode_entry(V, ACL, ResourceHierarchy) ->
             Permission = decode_permission(V2),
             insert_scope(Scope, Permission, ACL, ResourceHierarchy);
         _ ->
-            error({badarg, {role, V}})
+            throw({badarg, {role, V}})
     end.
 
 decode_scope(V, ResourceHierarchy) ->
@@ -79,7 +79,7 @@ decode_resource(V) ->
         binary_to_existing_atom(V, utf8)
     catch
         error:badarg ->
-            error({badarg, {resource, V}})
+            throw({badarg, {resource, V}})
     end.
 
 decode_permission(<<"read">>) ->
@@ -87,7 +87,7 @@ decode_permission(<<"read">>) ->
 decode_permission(<<"write">>) ->
     write;
 decode_permission(V) ->
-    error({badarg, {permission, V}}).
+    throw({badarg, {permission, V}}).
 
 %%
 
@@ -121,7 +121,7 @@ compute_priority(Scope, ResourceHierarchy) ->
 compute_scope_priority(Scope, ResourceHierarchy) when length(Scope) > 0 ->
     compute_scope_priority(Scope, ResourceHierarchy, 0);
 compute_scope_priority(Scope, _ResourceHierarchy) ->
-    error({badarg, {scope, Scope}}).
+    throw({badarg, {scope, Scope}}).
 
 compute_scope_priority([{Resource, _ID} | Rest], H, P) ->
     compute_scope_priority(Rest, delve(Resource, H), P * 10 + 2);
@@ -137,5 +137,5 @@ delve(Resource, Hierarchy) ->
         {ok, Sub} ->
             Sub;
         error ->
-            error({badarg, {resource, Resource}})
+            throw({badarg, {resource, Resource}})
     end.

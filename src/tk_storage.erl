@@ -1,72 +1,90 @@
 -module(tk_storage).
 
--export([get/2]).
--export([store/2]).
--export([revoke/2]).
+%%
+
+-export([child_specs/1]).
+-behaviour(supervisor).
+-export([init/1]).
 
 %%
 
--callback get(authdata_id(), storage_opts(), tk_woody_handler:handle_ctx()) ->
-    {ok, tk_storage:storable_authdata()} | {error, _Reason}.
--callback store(tk_storage:storable_authdata(), storage_opts(), tk_woody_handler:handle_ctx()) -> ok | {error, _Reason}.
--callback revoke(authdata_id(), storage_opts(), tk_woody_handler:handle_ctx()) -> ok | {error, _Reason}.
+-export([get/3]).
+-export([store/3]).
+-export([revoke/3]).
 
 %%
 
--type storable_authdata() :: #{
-    id => tk_authority:authdata_id(),
-    status := tk_authority:status(),
-    context := tk_authority:encoded_context_fragment(),
-    authority => tk_authority:autority_id(),
-    metadata => tk_authority:metadata()
-}.
-
--export_type([storable_authdata/0]).
+-callback get(authdata_id(), storage_opts(), woody_context:ctx()) -> {ok, authdata()} | {error, _Reason}.
+-callback store(authdata(), storage_opts(), woody_context:ctx()) -> ok | {error, _Reason}.
+-callback revoke(authdata_id(), storage_opts(), woody_context:ctx()) -> ok | {error, _Reason}.
 
 %%
 
--type authdata_id() :: tk_authority:authdata_id().
+-type storage_name() :: binary().
 
--type storage() :: machinegun.
+-export_type([storage_name/0]).
+
+%%
+
+-type authdata() :: tk_authdata:prototype().
+-type authdata_id() :: tk_authdata:id().
 -type storage_opts() :: tk_storage_machinegun:storage_opts().
-
--type storage_config() :: storage() | {storage(), storage_opts()}.
-
-%%
-
--spec get(authdata_id(), tk_woody_handler:handle_ctx()) -> {ok, storable_authdata()} | {error, _Reason}.
-get(DataID, Ctx) ->
-    call(DataID, get_storage_config(), Ctx, get).
-
--spec store(storable_authdata(), tk_woody_handler:handle_ctx()) -> ok | {error, exists}.
-store(AuthData, Ctx) ->
-    call(AuthData, get_storage_config(), Ctx, store).
-
--spec revoke(authdata_id(), tk_woody_handler:handle_ctx()) -> ok | {error, notfound}.
-revoke(DataID, Ctx) ->
-    call(DataID, get_storage_config(), Ctx, revoke).
+-type storages_config() :: #{storage_name() => storage_config()}.
+-type storage_config() :: machinegun_storage_config().
+-type machinegun_storage_config() :: {machinegun, tk_storage_machinegun:storage_opts()}.
 
 %%
 
--spec get_storage_config() -> storage_config() | no_return().
-get_storage_config() ->
-    case genlib_app:env(token_keeper, storage) of
-        StorageConf when StorageConf =/= undefined ->
-            StorageConf;
-        _ ->
-            error({misconfiguration, {storage, not_configured}})
-    end.
+-define(PTERM_KEY(Key), {?MODULE, Key}).
+-define(STORAGE_NAME(StorageName), ?PTERM_KEY({storage_name, StorageName})).
 
--spec get_storage_handler(storage()) -> machinery:logic_handler(_).
+%%
+
+-spec child_specs(storages_config()) -> [supervisor:child_spec()].
+child_specs(StorageOpts) ->
+    [
+        #{
+            id => ?MODULE,
+            start => {supervisor, start_link, [?MODULE, StorageOpts]},
+            type => supervisor
+        }
+    ].
+
+-spec init(storages_config()) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+init(StoragesConfig) ->
+    _ = store_configs(StoragesConfig),
+    {ok, {#{}, []}}.
+
+%%
+
+-spec get(authdata_id(), storage_name(), woody_context:ctx()) -> {ok, authdata()} | {error, _Reason}.
+get(AuthDataID, StorageName, Ctx) ->
+    call(get, AuthDataID, get_config(StorageName), Ctx).
+
+-spec store(authdata(), storage_name(), woody_context:ctx()) -> ok | {error, exists}.
+store(AuthData, StorageName, Ctx) ->
+    call(store, AuthData, get_config(StorageName), Ctx).
+
+-spec revoke(authdata_id(), storage_name(), woody_context:ctx()) -> ok | {error, notfound}.
+revoke(AuthDataID, StorageName, Ctx) ->
+    call(revoke, AuthDataID, get_config(StorageName), Ctx).
+
+%%
+
+store_configs(StoragesConfig) ->
+    maps:foreach(fun store_config/2, StoragesConfig).
+
+store_config(StorageName, StorageOpts) ->
+    ok = persistent_term:put(?STORAGE_NAME(StorageName), StorageOpts).
+
+get_config(StorageName) ->
+    persistent_term:get(?STORAGE_NAME(StorageName), undefined).
+
+%%
+
 get_storage_handler(machinegun) ->
     tk_storage_machinegun.
 
-call(Operand, StorageOpts, Ctx, Func) ->
-    {Storage, Opts} = get_storage_opts(StorageOpts),
+call(Func, Operand, {Storage, Opts}, Ctx) ->
     Handler = get_storage_handler(Storage),
     Handler:Func(Operand, Opts, Ctx).
-
-get_storage_opts(Storage) when is_atom(Storage) ->
-    {Storage, #{}};
-get_storage_opts({_, _} = StorageOpts) ->
-    StorageOpts.

@@ -5,27 +5,25 @@
 
 -export([get_authdata/3]).
 
-%%
+%% API types
 
--type stored_authdata() :: tk_storage:storable_authdata().
--type source_opts() :: #{}.
+-type opts() :: #{
+    name := tk_storage:storage_name()
+}.
+-export_type([opts/0]).
 
--export_type([stored_authdata/0]).
--export_type([source_opts/0]).
+%% Internal types
+
+-type authdata() :: tk_authdata:prototype().
 
 %% Behaviour functions
 
--spec get_authdata(tk_token_jwt:t(), source_opts(), tk_woody_handler:handle_ctx()) -> stored_authdata() | undefined.
-get_authdata(Token, _SourceOpts, Ctx) ->
-    case tk_storage:get(get_authdata_id(Token), Ctx) of
+-spec get_authdata(tk_token:token_data(), opts(), woody_context:ctx()) -> authdata() | undefined.
+get_authdata(#{id := ID}, #{name := StorageName}, Context) ->
+    case tk_storage:get(ID, StorageName, Context) of
         {ok, AuthData} ->
             AuthData;
         {error, Reason} ->
-            _ = logger:warning("Failed storage get: ~p", [Reason]),
+            _ = logger:warning("Failed attempt to get bouncer context from storage: ~p", [Reason]),
             undefined
     end.
-
-%%
-
-get_authdata_id(Claims) ->
-    tk_token_jwt:get_token_id(Claims).
