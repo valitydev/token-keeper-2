@@ -51,7 +51,7 @@
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},2},
  {<<"mg_proto">>,
-  {git,"https://github.com/valitydev/machinegun_proto.git",
+  {git,"https://github.com/valitydev/machinegun-proto.git",
        {ref,"d814d6948d4ff13f6f41d12c6613f59c805750b2"}},
   1},
  {<<"mimerl">>,{pkg,<<"mimerl">>,<<"1.2.0">>},2},
