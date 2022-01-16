@@ -56,7 +56,7 @@
   1},
  {<<"mimerl">>,{pkg,<<"mimerl">>,<<"1.2.0">>},2},
  {<<"org_management_proto">>,
-  {git,"https://github.com:valitydev/org-management-proto.git",
+  {git,"https://github.com/valitydev/org-management-proto.git",
        {ref,"06c5c8430e445cb7874e54358e457cbb5697fc32"}},
   1},
  {<<"parse_trans">>,{pkg,<<"parse_trans">>,<<"3.3.1">>},2},
