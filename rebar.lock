@@ -77,7 +77,7 @@
   0},
  {<<"token_keeper_proto">>,
   {git,"https://github.com/valitydev/token-keeper-proto.git",
-       {ref,"8f7016f68692fc8e3141ba0fce2d47b6c8b6102a"}},
+       {ref,"c7f48d24a561c95b8135d3b07fd2ff55a62eb308"}},
   0},
  {<<"unicode_util_compat">>,{pkg,<<"unicode_util_compat">>,<<"0.7.0">>},2},
  {<<"woody">>,
