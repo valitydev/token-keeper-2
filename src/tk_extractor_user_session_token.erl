@@ -1,11 +1,11 @@
--module(tk_context_extractor_user_session_token).
--behaviour(tk_context_extractor).
+-module(tk_extractor_user_session_token).
+-behaviour(tk_extractor).
 
--export([extract_context/2]).
+-export([get_context/2]).
 
 %%
 
--type opts() :: #{
+-type extractor_opts() :: #{
     metadata_mappings := #{
         user_id := binary(),
         user_email := binary(),
@@ -14,20 +14,16 @@
     user_realm := binary()
 }.
 
--export_type([opts/0]).
-
-%%
-
--define(CLAIM_USER_ID, <<"sub">>).
--define(CLAIM_USER_EMAIL, <<"email">>).
+-export_type([extractor_opts/0]).
 
 %% API functions
 
--spec extract_context(tk_token:token_data(), opts()) -> tk_context_extractor:extracted_context() | undefined.
-extract_context(#{id := TokenID, expiration := Expiration, payload := Payload}, Opts) ->
-    UserID = maps:get(?CLAIM_USER_ID, Payload),
-    Email = maps:get(?CLAIM_USER_EMAIL, Payload),
-    UserRealm = maps:get(user_realm, Opts, undefined),
+-spec get_context(tk_token_jwt:t(), extractor_opts()) -> tk_extractor:extracted_context().
+get_context(Token, ExtractorOpts) ->
+    UserID = tk_token_jwt:get_subject_id(Token),
+    Email = tk_token_jwt:get_subject_email(Token),
+    Expiration = tk_token_jwt:get_expires_at(Token),
+    UserRealm = maps:get(user_realm, ExtractorOpts, undefined),
     Acc0 = bouncer_context_helpers:empty(),
     Acc1 = bouncer_context_helpers:add_user(
         #{
@@ -41,7 +37,7 @@ extract_context(#{id := TokenID, expiration := Expiration, payload := Payload}, 
         #{
             method => <<"SessionToken">>,
             expiration => make_auth_expiration(Expiration),
-            token => #{id => TokenID}
+            token => #{id => tk_token_jwt:get_token_id(Token)}
         },
         Acc1
     ),
@@ -52,14 +48,14 @@ extract_context(#{id := TokenID, expiration := Expiration, payload := Payload}, 
                 user_email => Email,
                 user_realm => UserRealm
             },
-            Opts
+            ExtractorOpts
         )}.
 
 %% Internal functions
 
 make_auth_expiration(Timestamp) when is_integer(Timestamp) ->
     genlib_rfc3339:format(Timestamp, second);
-make_auth_expiration(Expiration) when Expiration =:= unlimited ->
+make_auth_expiration(Expiration) when Expiration =:= unlimited; Expiration =:= undefined ->
     undefined.
 
 make_metadata(Metadata, ExtractorOpts) ->

@@ -5,18 +5,18 @@ description: >
   entry in a list is an _identifier_ of some auth token. Example:
 
     entries:
-      test.rkbmoney.keycloak:
+      keycloak:
         - "token_a"
         - "token_b"
-      test.rkbmoney.apikeymgmt:
+      apikeymgmt:
         - "token_c"
 
   Broadly speaking, what constitutes an _identifier_ depends on which _tokens_
   are we talking about. Though for the foreseeable future, we consider only
   JWTs where JWT's identifier is the value of the 'jti' claim.
 entries:
-  test.rkbmoney.keycloak:
+  keycloak:
     - "token_a"
     - "token_b"
-  test.rkbmoney.apikeymgmt:
+  apikeymgmt:
     - "token_c"
