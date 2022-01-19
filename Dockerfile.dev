@@ -1,13 +1,13 @@
 ARG OTP_VERSION
 
-FROM docker.io/library/erlang:${OTP_VERSION}
+FROM docker.io/library/erlang:${OTP_VERSION}-slim
 
 ARG THRIFT_VERSION
 ARG TARGETARCH
 
-RUN echo "${TARGETARCH}"
+RUN apt-get update && apt-get install -y --no-install-recommends make git ca-certificates curl
 
-RUN wget -q -O- "https://github.com/valitydev/thrift/releases/download/${THRIFT_VERSION}/thrift-${THRIFT_VERSION}-linux-${TARGETARCH}.tar.gz" \
+RUN curl -L "https://github.com/valitydev/thrift/releases/download/${THRIFT_VERSION}/thrift-${THRIFT_VERSION}-linux-${TARGETARCH}.tar.gz" \
     | tar -xvz -C /usr/local/bin/
 
 ENV CHARSET=UTF-8
