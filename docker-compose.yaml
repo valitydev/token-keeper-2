@@ -1,7 +1,7 @@
 version: '3'
 services:
   
-  token-keeper-build:
+  token-keeper: # Keep in sync with $(SERVICE)
     image: $DEV_IMAGE_TAG
     build:
       dockerfile: Dockerfile.dev
@@ -9,10 +9,11 @@ services:
       args:
         OTP_VERSION: $OTP_VERSION
         THRIFT_VERSION: $THRIFT_VERSION
-        PLATFORM: $PLATFORM
     volumes:
       - .:$PWD
       - $HOME/.cache:/home/$UNAME/.cache
+    depends_on:
+      - machinegun
     expose:
       - "8022"
     working_dir: $PWD

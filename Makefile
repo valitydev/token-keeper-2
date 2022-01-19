@@ -23,12 +23,15 @@ all: compile
 DEV_IMAGE_TAG = $(SERVICE)-dev
 DEV_IMAGE_ID = $(file < .image.dev)
 
+# Enable buildkit extensions in compose
+DOCKER_COMPOSE_BUILD_ENV = COMPOSE_DOCKER_CLI_BUILD=1 DOCKER_BUILDKIT=1
+
 .PHONY: dev-image clean-dev-image wc-shell test
 
 dev-image: .image.dev
 
 .image.dev: Dockerfile.dev .env
-	env $(DOTENV) PLATFORM=$(shell uname -m) DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) build $(SERVICE)-build
+	env $(DOTENV) DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKER_COMPOSE_BUILD_ENV) $(DOCKERCOMPOSE) build $(SERVICE)
 	$(DOCKER) image ls -q -f "reference=$(DEV_IMAGE_ID)" | head -n1 > $@
 
 clean-dev-image:
@@ -41,7 +44,7 @@ DOCKER_WC_OPTIONS := -v $(PWD):$(PWD) --workdir $(PWD)
 DOCKER_WC_EXTRA_OPTIONS ?= --rm
 DOCKER_RUN = $(DOCKER) run $(DOCKER_WC_OPTIONS) $(DOCKER_WC_EXTRA_OPTIONS)
 
-DOCKERCOMPOSE_RUN = $(DOCKERCOMPOSE) run --name $(SERVICE) $(DOCKER_WC_OPTIONS) $(DOCKER_WC_EXTRA_OPTIONS)
+DOCKERCOMPOSE_RUN = DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) run --name $(SERVICE) --rm $(DOCKER_WC_OPTIONS)
 
 wc-shell: dev-image
 	$(DOCKER_RUN) --interactive --tty $(DEV_IMAGE_TAG)
@@ -51,18 +54,10 @@ wc-%: dev-image
 
 #  TODO docker compose down doesn't work yet
 wdeps-shell: dev-image
-	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) up -d
-	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE_RUN) $(SERVICE) su
-	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) down
+	$(DOCKERCOMPOSE_RUN) $(SERVICE) su
 
 wdeps-%: dev-image
-	{ \
-	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) up -d ; \
-	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE_RUN) $(SERVICE)-build make $*  ; \
-	res=$$? ; \
-	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) down ; \
-	exit $$res ; \
-	}
+	$(DOCKERCOMPOSE_RUN) $(SERVICE) make $*
 
 # Erlang-specific tasks
 

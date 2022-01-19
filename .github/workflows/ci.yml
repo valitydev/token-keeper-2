@@ -14,6 +14,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
+      - name: Update environment variables
+        run: grep -v '^#' .env >> $GITHUB_ENV
+
       - name: Cache _build
         uses: actions/cache@v2
         with:
@@ -30,6 +33,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+
+      - name: Update environment variables
+        run: grep -v '^#' .env >> $GITHUB_ENV
 
       - name: Cache _build
         uses: actions/cache@v2
@@ -53,6 +59,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+
+      - name: Update environment variables
+        run: grep -v '^#' .env >> $GITHUB_ENV
 
       - name: Cache _build
         uses: actions/cache@v2
@@ -80,6 +89,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+
+      - name: Update environment variables
+        run: grep -v '^#' .env >> $GITHUB_ENV
 
       - name: Cache _build
         uses: actions/cache@v2
