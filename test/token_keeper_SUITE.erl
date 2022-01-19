@@ -41,7 +41,7 @@
 -export([revoke_authdata_by_id_ok/1]).
 -export([revoke_authdata_by_id_not_found_fail/1]).
 
--type config() :: ct_helper:config().
+-type config() :: [{atom(), any()}].
 -type group_name() :: atom().
 -type test_case_name() :: atom().
 
@@ -67,7 +67,7 @@
 
 %%
 
--spec all() -> [atom()].
+-spec all() -> [{group, group_name()}].
 
 all() ->
     [
@@ -393,7 +393,7 @@ end_per_group(_GroupName, C) ->
 init_per_testcase(Name, C) ->
     [{testcase, Name} | C].
 
--spec end_per_testcase(atom(), config()) -> config().
+-spec end_per_testcase(atom(), config()) -> ok.
 end_per_testcase(_Name, _C) ->
     ok.
 
@@ -855,8 +855,6 @@ assert_user({user_session_token, _JTI, SubjectID, SubjectEmail, _Exp}, User) ->
     ?assertEqual(SubjectEmail, User#bctx_v1_User.email),
     ?assertEqual(?CTX_ENTITY(<<"external">>), User#bctx_v1_User.realm).
 
-make_auth_expiration(Timestamp) when is_integer(Timestamp) ->
-    genlib_rfc3339:format(Timestamp, second);
 make_auth_expiration(unlimited) ->
     undefined.
 

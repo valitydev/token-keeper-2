@@ -119,6 +119,11 @@ deserialize(Type, Data) ->
 -spec marshal_unmarshal_created_test() -> _.
 -spec marshal_unmarshal_status_changed_test() -> _.
 
+-define(CONTEXT, #{
+    machine_ref => <<"TEST">>,
+    machine_ns => test
+}).
+
 marshal_unmarshal_created_test() ->
     Event =
         {created, #tk_events_AuthDataCreated{
@@ -127,8 +132,8 @@ marshal_unmarshal_created_test() ->
             context = #bctx_ContextFragment{type = v1_thrift_binary, content = <<"STUFF">>},
             metadata = #{}
         }},
-    {Marshaled, _} = marshal_event(1, Event, {}),
-    {Unmarshaled, _} = unmarshal_event(1, Marshaled, {}),
+    {Marshaled, _} = marshal_event(1, Event, ?CONTEXT),
+    {Unmarshaled, _} = unmarshal_event(1, Marshaled, ?CONTEXT),
     ?assertEqual(Event, Unmarshaled).
 
 marshal_unmarshal_status_changed_test() ->
@@ -136,8 +141,8 @@ marshal_unmarshal_status_changed_test() ->
         {status_changed, #tk_events_AuthDataStatusChanged{
             status = revoked
         }},
-    {Marshaled, _} = marshal_event(1, Event, {}),
-    {Unmarshaled, _} = unmarshal_event(1, Marshaled, {}),
+    {Marshaled, _} = marshal_event(1, Event, ?CONTEXT),
+    {Unmarshaled, _} = unmarshal_event(1, Marshaled, ?CONTEXT),
     ?assertEqual(Event, Unmarshaled).
 
 -endif.
