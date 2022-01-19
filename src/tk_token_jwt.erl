@@ -83,7 +83,7 @@ init(#{keyset := KeySet, authority_bindings := AuthorityBindings}) ->
     | {error,
         {alg_not_supported, Alg :: atom()}
         | {key_not_found, KID :: atom()}
-        | {authority_does_not_exist, AuthorityID :: binary()}
+        | {no_authority_for_keyname, KeyName :: binary()}
         | {invalid_token, Reason :: term()}
         | invalid_signature}.
 verify(Token, SourceContext) ->
@@ -93,7 +93,7 @@ verify(Token, SourceContext) ->
                 AuthorityID when AuthorityID =/= undefined ->
                     {ok, construct_token_data(Claims, SourceContext, AuthorityID)};
                 undefined ->
-                    {error, {authority_does_not_exist, AuthorityID}}
+                    {error, {no_authority_for_keyname, KeyName}}
             end;
         {error, _} = Error ->
             Error
