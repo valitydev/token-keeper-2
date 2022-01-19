@@ -1,0 +1,11 @@
+coverage:
+  status:
+    project:
+      default:
+        # Allow total coverage to drop by at most 0%
+        target: auto
+        threshold: 0%
+    patch:
+      default:
+        # Force any given PR to be at least 70% covered
+        target: 80%
