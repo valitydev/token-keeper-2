@@ -19,3 +19,6 @@ rebar3.crashdump
 *~
 *.sublime-workspace
 .DS_Store
+# make stuff
+/.image.*
+Makefile.env

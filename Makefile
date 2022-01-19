@@ -1,44 +1,72 @@
-REBAR := $(shell which rebar3 2>/dev/null || which ./rebar3)
-SUBMODULES = build_utils
-SUBTARGETS = $(patsubst %,%/.git,$(SUBMODULES))
+# HINT
+# Use this file to override variables here.
+# For example, to run with podman put `DOCKER=podman` there.
+-include Makefile.env
 
-UTILS_PATH := build_utils
-TEMPLATES_PATH := .
+SERVICE := token-keeper
 
-# Name of the service
-SERVICE_NAME := token-keeper
-# Service image default tag
-SERVICE_IMAGE_TAG ?= $(shell git rev-parse HEAD)
-# The tag for service image to be pushed with
-SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
+# NOTE
+# Variables specified in `.env` file are used to pick and setup specific
+# component versions, both when building a development image and when running
+# CI workflows on GH Actions. This ensures that tasks run with `wc-` prefix
+# (like `wc-dialyze`) are reproducible between local machine and CI runners.
+DOTENV := $(shell grep -v '^\#' .env)
 
-# Base image for the service
-BASE_IMAGE_NAME := service-erlang
-BASE_IMAGE_TAG := 5ea1e10733d806e40761b6c8eec93fc0c9657992
-
-BUILD_IMAGE_NAME := build-erlang
-BUILD_IMAGE_TAG := 785d48cbfa7e7f355300c08ba9edc6f0e78810cb
-CALL_ANYWHERE := \
-	submodules \
-	all compile xref lint dialyze cover release clean distclean \
-	check_format format
-
-CALL_W_CONTAINER := $(CALL_ANYWHERE) test
-
-.PHONY: $(CALL_W_CONTAINER) all
+DOCKER ?= docker
+DOCKERCOMPOSE ?= docker-compose
+REBAR ?= rebar3
 
 all: compile
 
--include $(UTILS_PATH)/make_lib/utils_container.mk
--include $(UTILS_PATH)/make_lib/utils_image.mk
+# Development images
 
-$(SUBTARGETS): %/.git: %
-	git submodule update --init $<
-	touch $@
+DEV_IMAGE_TAG = $(SERVICE)-dev
+DEV_IMAGE_ID = $(file < .image.dev)
 
-submodules: $(SUBTARGETS)
+.PHONY: dev-image clean-dev-image wc-shell test
 
-compile: submodules
+dev-image: .image.dev
+
+.image.dev: Dockerfile.dev .env
+	env $(DOTENV) PLATFORM=$(shell uname -m) DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) build $(SERVICE)-build
+	$(DOCKER) image ls -q -f "reference=$(DEV_IMAGE_ID)" | head -n1 > $@
+
+clean-dev-image:
+ifneq ($(DEV_IMAGE_ID),)
+	$(DOCKER) image rm -f $(DEV_IMAGE_TAG)
+	rm .image.dev
+endif
+
+DOCKER_WC_OPTIONS := -v $(PWD):$(PWD) --workdir $(PWD)
+DOCKER_WC_EXTRA_OPTIONS ?= --rm
+DOCKER_RUN = $(DOCKER) run $(DOCKER_WC_OPTIONS) $(DOCKER_WC_EXTRA_OPTIONS)
+
+DOCKERCOMPOSE_RUN = $(DOCKERCOMPOSE) run --name $(SERVICE) $(DOCKER_WC_OPTIONS) $(DOCKER_WC_EXTRA_OPTIONS)
+
+wc-shell: dev-image
+	$(DOCKER_RUN) --interactive --tty $(DEV_IMAGE_TAG)
+
+wc-%: dev-image
+	$(DOCKER_RUN) $(DEV_IMAGE_TAG) make $*
+
+#  TODO docker compose down doesn't work yet
+wdeps-shell: dev-image
+	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) up -d
+	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE_RUN) $(SERVICE) su
+	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) down
+
+wdeps-%: dev-image
+	{ \
+	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) up -d ; \
+	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE_RUN) $(SERVICE)-build make $*  ; \
+	res=$$? ; \
+	DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) down ; \
+	exit $$res ; \
+	}
+
+# Erlang-specific tasks
+
+compile:
 	$(REBAR) compile
 
 xref:
@@ -47,29 +75,29 @@ xref:
 lint:
 	$(REBAR) lint
 
-check_format:
+check-format:
 	$(REBAR) fmt -c
 
 format:
 	$(REBAR) fmt -w
 
 dialyze:
-	$(REBAR) dialyzer
+	$(REBAR) as test dialyzer
 
-release: submodules
+release:
 	$(REBAR) as prod release
 
 clean:
-	$(REBAR) cover -r
 	$(REBAR) clean
 
-distclean:
-	$(REBAR) clean
+distclean: clean-build-image
 	rm -rf _build
 
-cover:
-	$(REBAR) cover
+eunit:
+	$(REBAR) eunit --cover
 
-# CALL_W_CONTAINER
-test: submodules
-	$(REBAR) do eunit, ct
+common-test:
+	$(REBAR) ct --cover
+
+cover:
+	$(REBAR) do cover, covertool generate

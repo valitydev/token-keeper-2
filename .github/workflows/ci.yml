@@ -1,0 +1,110 @@
+name: Erlang Service CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ '**' ]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Cache _build
+        uses: actions/cache@v2
+        with:
+          path: _build/*/lib
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+
+      - name: Compile
+        run: make wc-compile
+
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Cache _build
+        uses: actions/cache@v2
+        with:
+          path: _build/*/lib
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+      
+      - name: Check formatting
+        run: make wc-check-format
+      
+      - name: Run linting
+        run: make wc-lint
+
+      - name: Run xref
+        run: make wc-xref
+
+  dialyze:
+    name: Dialyze
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Cache _build
+        uses: actions/cache@v2
+        with:
+          path: _build/*/lib
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+
+      - name: Cache PLTs
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cache/rebar3/rebar3_*_plt
+            _build/test/rebar3_*_plt
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-plt-${{ hashFiles('**/rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-plt-      
+
+      - name: Run dialyzer
+        run: make wc-dialyze
+
+  test:
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Cache _build
+        uses: actions/cache@v2
+        with:
+          path: _build/*/lib
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+
+      - name: Run EUnit
+        run: make wc-eunit
+
+      - name: Run CT
+        id: run-common-test
+        run: make wdeps-common-test
+
+      - name: Store CT Logs
+        if: ${{ failure() && steps.run-common-test.outcome == 'failure' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: ct-logs
+          path: _build/test/logs
+
+      - name: Run test coverage analysis
+        run: make wc-cover
+
+      - name: Upload coverage statistics
+        uses: codecov/codecov-action@v2
+        with:
+          files: _build/test/covertool/*.covertool.xml

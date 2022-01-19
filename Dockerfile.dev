@@ -1,0 +1,21 @@
+ARG OTP_VERSION
+
+FROM docker.io/library/erlang:${OTP_VERSION}
+
+ARG OTP_VERSION
+ARG THRIFT_VERSION
+ARG PLATFORM
+
+RUN echo "${PLATFORM}"
+
+RUN case "${PLATFORM}" in \
+         "x86_64")  PACKAGEPLATFORM=linux-amd64  ;; \
+         "arm64")  PACKAGEPLATFORM=linux-arm64  ;; \
+         *)  ;; \
+    esac; \
+    wget -v -O- "https://github.com/valitydev/thrift/releases/download/${THRIFT_VERSION}/thrift-${THRIFT_VERSION}-${PACKAGEPLATFORM}.tar.gz" \
+    | tar -xvz -C /usr/local/bin/
+
+ENV CHARSET=UTF-8
+ENV LANG=C.UTF-8
+CMD /bin/bash
