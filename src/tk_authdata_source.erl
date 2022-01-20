@@ -10,13 +10,12 @@
 
 %% API Types
 
--type authdata_source() :: claim_source() | storage_source() | legacy_claim_source() | extractor_source().
+-type authdata_source() :: claim_source() | storage_source() | extractor_source().
 
 -type opts() ::
     tk_authdata_source_claim:opts()
     | tk_authdata_source_storage:opts()
-    | tk_authdata_source_context_extractor:opts()
-    | tk_authdata_source_legacy_claim:opts().
+    | tk_authdata_source_context_extractor:opts().
 
 -export_type([authdata_source/0]).
 
@@ -26,7 +25,6 @@
 
 -type claim_source() :: {claim, tk_authdata_source_claim:opts()}.
 -type storage_source() :: {storage, tk_authdata_source_storage:opts()}.
--type legacy_claim_source() :: {legacy_claim, tk_authdata_source_legacy_claim:opts()}.
 -type extractor_source() :: {extract_context, tk_authdata_source_context_extractor:opts()}.
 
 %% API functions
@@ -45,7 +43,5 @@ get_source_handler(claim) ->
     tk_authdata_source_claim;
 get_source_handler(storage) ->
     tk_authdata_source_storage;
-get_source_handler(legacy_claim) ->
-    tk_authdata_source_legacy_claim;
 get_source_handler(extract_context) ->
     tk_authdata_source_context_extractor.

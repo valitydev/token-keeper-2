@@ -22,11 +22,7 @@
 -export([authenticate_invalid_token_key_fail/1]).
 -export([authenticate_phony_api_key_token_ok/1]).
 -export([authenticate_user_session_token_ok/1]).
--export([authenticate_invoice_template_access_token_ok/1]).
--export([authenticate_invoice_template_access_token_no_access/1]).
--export([authenticate_invoice_template_access_token_invalid_access/1]).
 -export([authenticate_claim_token_no_context_fail/1]).
--export([authenticate_legacy_claim_token_ok/1]).
 -export([authenticate_blacklisted_jti_fail/1]).
 -export([authenticate_non_blacklisted_jti_ok/1]).
 -export([authenticate_ephemeral_claim_token_ok/1]).
@@ -72,8 +68,6 @@
 all() ->
     [
         {group, external_detect_token},
-        {group, external_invoice_template_access_token},
-        {group, external_legacy_claim},
         {group, blacklist},
         {group, ephemeral},
         {group, offline}
@@ -87,17 +81,6 @@ groups() ->
             authenticate_invalid_token_key_fail,
             authenticate_phony_api_key_token_ok,
             authenticate_user_session_token_ok
-        ]},
-        {external_invoice_template_access_token, [parallel], [
-            authenticate_invalid_token_type_fail,
-            authenticate_invalid_token_key_fail,
-            authenticate_invoice_template_access_token_ok,
-            authenticate_invoice_template_access_token_no_access,
-            authenticate_invoice_template_access_token_invalid_access
-        ]},
-        {external_legacy_claim, [parallel], [
-            authenticate_claim_token_no_context_fail,
-            authenticate_legacy_claim_token_ok
         ]},
         {ephemeral, [parallel], [
             authenticate_claim_token_no_context_fail,
@@ -156,36 +139,6 @@ init_per_group(external_detect_token = Name, C) ->
                 },
                 keyset => #{
                     ?TK_AUTHORITY_KEYCLOAK => #{
-                        source => {pem_file, get_filename("keys/local/public.pem", C)}
-                    }
-                }
-            }
-        }}
-    ]),
-    ServiceUrls = #{
-        token_authenticator => mk_url(<<"/v2/authenticator">>)
-    },
-    [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C];
-init_per_group(external_invoice_template_access_token = Name, C) ->
-    C0 = start_keeper([
-        {authenticator, #{
-            service => #{
-                path => <<"/v2/authenticator">>
-            },
-            authorities => #{
-                ?TK_AUTHORITY_CAPI =>
-                    #{
-                        sources => [extract_method_invoice_tpl_token()]
-                    }
-            }
-        }},
-        {tokens, #{
-            jwt => #{
-                authority_bindings => #{
-                    ?TK_AUTHORITY_CAPI => ?TK_AUTHORITY_CAPI
-                },
-                keyset => #{
-                    ?TK_AUTHORITY_CAPI => #{
                         source => {pem_file, get_filename("keys/local/public.pem", C)}
                     }
                 }
@@ -446,46 +399,6 @@ authenticate_user_session_token_ok(C) ->
     } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C),
     _ = assert_context({user_session_token, JTI, SubjectID, SubjectEmail, unlimited}, Context).
 
--spec authenticate_invoice_template_access_token_ok(config()) -> _.
-authenticate_invoice_template_access_token_ok(C) ->
-    JTI = unique_id(),
-    InvoiceTemplateID = unique_id(),
-    SubjectID = unique_id(),
-    Claims = get_invoice_access_template_token_claims(JTI, SubjectID, InvoiceTemplateID),
-    Token = issue_token(Claims, C),
-    #token_keeper_AuthData{
-        id = undefined,
-        token = Token,
-        status = active,
-        context = Context,
-        metadata = #{?META_PARTY_ID := SubjectID},
-        authority = ?TK_AUTHORITY_CAPI
-    } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C),
-    _ = assert_context({invoice_template_access_token, JTI, SubjectID, InvoiceTemplateID}, Context).
-
--spec authenticate_invoice_template_access_token_no_access(config()) -> _.
-authenticate_invoice_template_access_token_no_access(C) ->
-    JTI = unique_id(),
-    SubjectID = unique_id(),
-    Claims = get_resource_access_claims(JTI, SubjectID, #{}),
-    Token = issue_token(Claims, C),
-    ?assertThrow(#token_keeper_AuthDataNotFound{}, call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C)).
-
--spec authenticate_invoice_template_access_token_invalid_access(config()) -> _.
-authenticate_invoice_template_access_token_invalid_access(C) ->
-    JTI = unique_id(),
-    InvoiceID = unique_id(),
-    SubjectID = unique_id(),
-    Claims = get_resource_access_claims(JTI, SubjectID, #{
-        ?TK_RESOURCE_DOMAIN => #{
-            <<"roles">> => [
-                <<"invoices.", InvoiceID/binary, ":read">>
-            ]
-        }
-    }),
-    Token = issue_token(Claims, C),
-    ?assertThrow(#token_keeper_AuthDataNotFound{}, call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C)).
-
 -spec authenticate_blacklisted_jti_fail(config()) -> _.
 authenticate_blacklisted_jti_fail(C) ->
     JTI = <<"MYCOOLKEY">>,
@@ -509,24 +422,6 @@ authenticate_claim_token_no_context_fail(C) ->
     Claims = get_base_claims(JTI, SubjectID),
     Token = issue_token(Claims, C),
     ?assertThrow(#token_keeper_AuthDataNotFound{}, call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C)).
-
--spec authenticate_legacy_claim_token_ok(config()) -> _.
-authenticate_legacy_claim_token_ok(C) ->
-    JTI = unique_id(),
-    SubjectID = unique_id(),
-    ContextFragment = create_encoded_bouncer_context(JTI),
-    Consumer = <<"client">>,
-    Claims = get_claim_token_claims(JTI, SubjectID, ContextFragment, undefined, Consumer),
-    Token = issue_token(Claims, C),
-    #token_keeper_AuthData{
-        id = undefined,
-        token = Token,
-        status = active,
-        context = Context,
-        metadata = #{?META_PARTY_ID := SubjectID, ?META_CAPI_CONSUMER := Consumer},
-        authority = ?TK_AUTHORITY_CAPI
-    } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C),
-    _ = assert_context({claim_token, JTI}, Context).
 
 -spec authenticate_ephemeral_claim_token_ok(config()) -> _.
 authenticate_ephemeral_claim_token_ok(C) ->
@@ -700,23 +595,6 @@ get_phony_api_key_claims(JTI, SubjectID) ->
 get_user_session_token_claims(JTI, SubjectID, SubjectEmail) ->
     maps:merge(#{<<"email">> => SubjectEmail}, get_base_claims(JTI, SubjectID)).
 
-get_resource_access_claims(JTI, SubjectID, ResourceAccess) ->
-    maps:merge(#{<<"resource_access">> => ResourceAccess}, get_base_claims(JTI, SubjectID)).
-
-get_invoice_access_template_token_claims(JTI, SubjectID, InvoiceTemplateID) ->
-    get_resource_access_claims(
-        JTI,
-        SubjectID,
-        #{
-            ?TK_RESOURCE_DOMAIN => #{
-                <<"roles">> => [
-                    <<"party.*.invoice_templates.", InvoiceTemplateID/binary, ".invoice_template_invoices:write">>,
-                    <<"party.*.invoice_templates.", InvoiceTemplateID/binary, ":read">>
-                ]
-            }
-        }
-    ).
-
 create_bouncer_context(JTI) ->
     bouncer_context_helpers:add_auth(
         #{
@@ -732,19 +610,6 @@ create_encoded_bouncer_context(JTI) ->
         type = v1_thrift_binary,
         content = encode_context_fragment_content(Fragment)
     }.
-
-get_claim_token_claims(JTI, SubjectID, #bctx_ContextFragment{content = FragmentContent}, Metadata, Consumer) ->
-    genlib_map:compact(#{
-        <<"jti">> => JTI,
-        <<"sub">> => SubjectID,
-        <<"bouncer_ctx">> => #{
-            <<"ty">> => <<"v1_thrift_binary">>,
-            <<"ct">> => base64:encode(FragmentContent)
-        },
-        <<"tk_metadata">> => Metadata,
-        <<"cons">> => Consumer,
-        <<"exp">> => 0
-    }).
 
 %%
 
@@ -916,19 +781,6 @@ start_keeper(Env, BlacklistPath) ->
             {blacklist, #{
                 path => BlacklistPath
             }},
-            {audit, #{
-                log => #{
-                    level => notice,
-                    backend => #{
-                        type => standard_io
-                    },
-                    formatter =>
-                        {logger_logstash_formatter, #{
-                            chars_limit => 4096,
-                            depth => unlimited
-                        }}
-                }
-            }},
             {machinegun, #{
                 processor => #{
                     path => <<"/v2/stateproc">>
@@ -965,18 +817,6 @@ extract_method_detect_token() ->
                     }
                 },
                 user_session_token_origins => [?USER_TOKEN_SOURCE]
-            }}
-        ]
-    }}.
-
-extract_method_invoice_tpl_token() ->
-    {extract_context, #{
-        methods => [
-            {invoice_template_access_token, #{
-                domain => ?TK_RESOURCE_DOMAIN,
-                metadata_mappings => #{
-                    party_id => ?META_PARTY_ID
-                }
             }}
         ]
     }}.

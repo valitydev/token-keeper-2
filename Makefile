@@ -59,7 +59,7 @@ wdeps-shell: dev-image
 wdeps-%: dev-image
 	$(DOCKERCOMPOSE_RUN) $(SERVICE) make $*
 
-# Erlang-specific tasks
+# CI-required tasks
 
 compile:
 	$(REBAR) compile
@@ -73,20 +73,11 @@ lint:
 check-format:
 	$(REBAR) fmt -c
 
-format:
-	$(REBAR) fmt -w
-
 dialyze:
 	$(REBAR) as test dialyzer
 
 release:
 	$(REBAR) as prod release
-
-clean:
-	$(REBAR) clean
-
-distclean: clean-build-image
-	rm -rf _build
 
 eunit:
 	$(REBAR) eunit --cover
@@ -96,3 +87,16 @@ common-test:
 
 cover:
 	$(REBAR) do cover, covertool generate
+
+# Helper tasks
+
+format:
+	$(REBAR) fmt -w
+
+clean:
+	$(REBAR) clean
+
+distclean: clean-build-image
+	rm -rf _build
+
+test: eunit common-test cover
