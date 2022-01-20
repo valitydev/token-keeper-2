@@ -86,7 +86,7 @@ common-test:
 	$(REBAR) ct --cover
 
 cover:
-	$(REBAR) do cover, covertool generate
+	$(REBAR) covertool generate
 
 # Helper tasks
 
@@ -100,3 +100,6 @@ distclean: clean-build-image
 	rm -rf _build
 
 test: eunit common-test cover
+
+cover-report:
+	$(REBAR) cover

@@ -23,9 +23,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
           restore-keys: |
-            ${{ runner.os }}-build-
+            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
 
       - name: Compile
         run: make wc-compile
@@ -45,9 +45,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
           restore-keys: |
-            ${{ runner.os }}-build-
+            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
       
       - name: Check formatting
         run: make wc-check-format
@@ -73,9 +73,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
           restore-keys: |
-            ${{ runner.os }}-build-
+            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
 
       - name: Cache PLTs
         uses: actions/cache@v2
@@ -103,9 +103,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
           restore-keys: |
-            ${{ runner.os }}-build-
+            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
 
       - name: Run EUnit
         run: make wc-eunit
