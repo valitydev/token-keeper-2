@@ -692,18 +692,6 @@ assert_auth({api_key_token, JTI, SubjectID}, Auth) ->
     ?assertEqual(<<"ApiKeyToken">>, Auth#bctx_v1_Auth.method),
     ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token),
     ?assertMatch([#bctx_v1_AuthScope{party = ?CTX_ENTITY(SubjectID)}], Auth#bctx_v1_Auth.scope);
-assert_auth({invoice_template_access_token, JTI, SubjectID, InvoiceTemplateID}, Auth) ->
-    ?assertEqual(<<"InvoiceTemplateAccessToken">>, Auth#bctx_v1_Auth.method),
-    ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token),
-    ?assertMatch(
-        [
-            #bctx_v1_AuthScope{
-                party = ?CTX_ENTITY(SubjectID),
-                invoice_template = ?CTX_ENTITY(InvoiceTemplateID)
-            }
-        ],
-        Auth#bctx_v1_Auth.scope
-    );
 assert_auth({user_session_token, JTI, _SubjectID, _SubjectEmail, Exp}, Auth) ->
     ?assertEqual(<<"SessionToken">>, Auth#bctx_v1_Auth.method),
     ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token),
@@ -712,8 +700,6 @@ assert_auth({user_session_token, JTI, _SubjectID, _SubjectEmail, Exp}, Auth) ->
 assert_user({claim_token, _}, undefined) ->
     ok;
 assert_user({api_key_token, _, _}, undefined) ->
-    ok;
-assert_user({invoice_template_access_token, _, _, _}, undefined) ->
     ok;
 assert_user({user_session_token, _JTI, SubjectID, SubjectEmail, _Exp}, User) ->
     ?assertEqual(SubjectID, User#bctx_v1_User.id),
