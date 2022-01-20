@@ -20,9 +20,10 @@
 
 -export([authenticate_invalid_token_type_fail/1]).
 -export([authenticate_invalid_token_key_fail/1]).
+-export([authenticate_no_payload_claims_fail/1]).
+-export([authenticate_user_session_token_no_payload_claims_fail/1]).
 -export([authenticate_phony_api_key_token_ok/1]).
 -export([authenticate_user_session_token_ok/1]).
--export([authenticate_claim_token_no_context_fail/1]).
 -export([authenticate_blacklisted_jti_fail/1]).
 -export([authenticate_non_blacklisted_jti_ok/1]).
 -export([authenticate_ephemeral_claim_token_ok/1]).
@@ -59,6 +60,10 @@
 -define(TK_AUTHORITY_APIKEYMGMT, <<"test.rbkmoney.apikeymgmt">>).
 -define(TK_AUTHORITY_CAPI, <<"test.rbkmoney.capi">>).
 
+-define(TK_KEY_KEYCLOAK, <<"test.rbkmoney.key.keycloak">>).
+-define(TK_KEY_APIKEYMGMT, <<"test.rbkmoney.key.apikeymgmt">>).
+-define(TK_KEY_CAPI, <<"test.rbkmoney.key.capi">>).
+
 -define(TK_RESOURCE_DOMAIN, <<"test-domain">>).
 
 %%
@@ -79,15 +84,22 @@ groups() ->
         {external_detect_token, [parallel], [
             authenticate_invalid_token_type_fail,
             authenticate_invalid_token_key_fail,
+            authenticate_no_payload_claims_fail,
+            authenticate_user_session_token_no_payload_claims_fail,
             authenticate_phony_api_key_token_ok,
             authenticate_user_session_token_ok
         ]},
         {ephemeral, [parallel], [
-            authenticate_claim_token_no_context_fail,
+            authenticate_invalid_token_type_fail,
+            authenticate_invalid_token_key_fail,
+            authenticate_no_payload_claims_fail,
             authenticate_ephemeral_claim_token_ok,
             issue_ephemeral_token_ok
         ]},
         {offline, [parallel], [
+            authenticate_invalid_token_type_fail,
+            authenticate_invalid_token_key_fail,
+            authenticate_no_payload_claims_fail,
             authenticate_offline_token_not_found_fail,
             authenticate_offline_token_revoked_fail,
             authenticate_offline_token_ok,
@@ -117,223 +129,94 @@ init_per_suite(C) ->
 end_per_suite(C) ->
     genlib_app:stop_unload_applications(?CONFIG(suite_apps, C)).
 
-%% @TODO Pending configurator
 -spec init_per_group(group_name(), config()) -> config().
 init_per_group(external_detect_token = Name, C) ->
+    AuthenticatorPath = <<"/v2/authenticator">>,
     C0 = start_keeper([
-        {authenticator, #{
-            service => #{
-                path => <<"/v2/authenticator">>
-            },
-            authorities => #{
-                ?TK_AUTHORITY_KEYCLOAK =>
-                    #{
-                        sources => [extract_method_detect_token()]
-                    }
-            }
-        }},
-        {tokens, #{
-            jwt => #{
-                authority_bindings => #{
-                    ?TK_AUTHORITY_KEYCLOAK => ?TK_AUTHORITY_KEYCLOAK
-                },
-                keyset => #{
-                    ?TK_AUTHORITY_KEYCLOAK => #{
-                        source => {pem_file, get_filename("keys/local/public.pem", C)}
-                    }
-                }
-            }
-        }}
+        tk_ct_config:authenticator(
+            AuthenticatorPath,
+            #{?TK_AUTHORITY_KEYCLOAK => [extract_method_detect_token()]}
+        ),
+        tk_ct_config:jwt_tokens(
+            #{?TK_KEY_KEYCLOAK => ?TK_AUTHORITY_KEYCLOAK},
+            #{?TK_KEY_KEYCLOAK => {pem_file, get_filename("keys/local/public.pem", C)}}
+        )
     ]),
     ServiceUrls = #{
-        token_authenticator => mk_url(<<"/v2/authenticator">>)
-    },
-    [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C];
-init_per_group(external_legacy_claim = Name, C) ->
-    C0 = start_keeper([
-        {authenticator, #{
-            service => #{
-                path => <<"/v2/authenticator">>
-            },
-            authorities => #{
-                ?TK_AUTHORITY_CAPI =>
-                    #{
-                        sources => [
-                            {legacy_claim, #{
-                                metadata_mappings => #{
-                                    party_id => ?META_PARTY_ID,
-                                    consumer => ?META_CAPI_CONSUMER
-                                }
-                            }}
-                        ]
-                    }
-            }
-        }},
-        {tokens, #{
-            jwt => #{
-                authority_bindings => #{
-                    ?TK_AUTHORITY_CAPI => ?TK_AUTHORITY_CAPI
-                },
-                keyset => #{
-                    ?TK_AUTHORITY_CAPI => #{
-                        source => {pem_file, get_filename("keys/local/public.pem", C)}
-                    }
-                }
-            }
-        }}
-    ]),
-    ServiceUrls = #{
-        token_authenticator => mk_url(<<"/v2/authenticator">>)
+        token_authenticator => mk_url(AuthenticatorPath)
     },
     [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C];
 init_per_group(blacklist = Name, C) ->
-    C0 = start_keeper(
-        [
-            {authenticator, #{
-                service => #{
-                    path => <<"/v2/authenticator">>
-                },
-                authorities => #{
-                    <<"blacklisting_authority">> =>
-                        #{
-                            sources => [extract_method_detect_token()]
-                        },
-                    ?TK_AUTHORITY_CAPI =>
-                        #{
-                            sources => [extract_method_detect_token()]
-                        }
-                }
-            }},
-            {tokens, #{
-                jwt => #{
-                    authority_bindings => #{
-                        <<"blacklisting_authority">> => <<"blacklisting_authority">>,
-                        ?TK_AUTHORITY_CAPI => ?TK_AUTHORITY_CAPI
-                    },
-                    keyset => #{
-                        <<"blacklisting_authority">> => #{
-                            source => {pem_file, get_filename("keys/local/private.pem", C)}
-                        },
-                        ?TK_AUTHORITY_CAPI => #{
-                            source => {pem_file, get_filename("keys/secondary/private.pem", C)}
-                        }
-                    }
-                }
-            }}
-        ],
-        get_filename("blacklisted_keys.yaml", C)
-    ),
+    AuthenticatorPath = <<"/v2/authenticator">>,
+    C0 = start_keeper([
+        tk_ct_config:authenticator(
+            AuthenticatorPath,
+            #{
+                <<"blacklisting_authority">> => [extract_method_detect_token()],
+                ?TK_AUTHORITY_CAPI => [extract_method_detect_token()]
+            }
+        ),
+        tk_ct_config:jwt_tokens(
+            #{
+                <<"blacklisting_authority.key">> => <<"blacklisting_authority">>,
+                ?TK_KEY_CAPI => ?TK_AUTHORITY_CAPI
+            },
+            #{
+                <<"blacklisting_authority.key">> => {pem_file, get_filename("keys/local/private.pem", C)},
+                ?TK_KEY_CAPI => {pem_file, get_filename("keys/secondary/private.pem", C)}
+            }
+        ),
+        tk_ct_config:blacklist(get_filename("blacklisted_keys.yaml", C))
+    ]),
     ServiceUrls = #{
-        token_authenticator => mk_url(<<"/v2/authenticator">>)
+        token_authenticator => mk_url(AuthenticatorPath)
     },
     [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C];
 init_per_group(ephemeral = Name, C) ->
+    AuthenticatorPath = <<"/v2/authenticator">>,
+    AuthorityPath = <<"/v2/authority/com.rbkmoney.access.capi">>,
     C0 = start_keeper([
-        {authenticator, #{
-            service => #{
-                path => <<"/v2/authenticator">>
-            },
-            authorities => #{
-                ?TK_AUTHORITY_CAPI => #{
-                    sources => [
-                        {claim, #{}}
-                    ]
-                }
-            }
-        }},
-        {authorities, #{
-            ?TK_AUTHORITY_CAPI =>
-                #{
-                    service => #{
-                        path => <<"/v2/authority/com.rbkmoney.access.capi">>
-                    },
-                    type =>
-                        {ephemeral, #{
-                            token => #{
-                                type => jwt
-                            }
-                        }}
-                }
-        }},
-        {tokens, #{
-            jwt => #{
-                authority_bindings => #{
-                    ?TK_AUTHORITY_CAPI => ?TK_AUTHORITY_CAPI
-                },
-                keyset => #{
-                    ?TK_AUTHORITY_CAPI => #{
-                        source => {pem_file, get_filename("keys/local/private.pem", C)}
-                    }
-                }
-            }
-        }}
+        tk_ct_config:authenticator(AuthenticatorPath, #{?TK_AUTHORITY_CAPI => [{claim, #{}}]}),
+        tk_ct_config:authorities(#{
+            ?TK_AUTHORITY_CAPI => tk_ct_config:ephemeral_authority(AuthorityPath, jwt)
+        }),
+        tk_ct_config:jwt_tokens(
+            #{?TK_KEY_CAPI => ?TK_AUTHORITY_CAPI},
+            #{?TK_KEY_CAPI => {pem_file, get_filename("keys/local/private.pem", C)}}
+        )
     ]),
     ServiceUrls = #{
-        token_authenticator => mk_url(<<"/v2/authenticator">>),
-        {token_ephemeral_authority, ?TK_AUTHORITY_CAPI} => mk_url(<<"/v2/authority/com.rbkmoney.access.capi">>)
+        token_authenticator => mk_url(AuthenticatorPath),
+        {token_ephemeral_authority, ?TK_AUTHORITY_CAPI} => mk_url(AuthorityPath)
     },
     [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C];
 init_per_group(offline = Name, C) ->
+    AuthenticatorPath = <<"/v2/authenticator">>,
+    AuthorityPath = <<"/v2/authority/com.rbkmoney.apikemgmt">>,
     C0 = start_keeper([
-        {authenticator, #{
-            service => #{
-                path => <<"/v2/authenticator">>
-            },
-            authorities => #{
-                ?TK_AUTHORITY_APIKEYMGMT =>
-                    #{
-                        sources => [
-                            {storage, #{
-                                name => ?TK_AUTHORITY_APIKEYMGMT
-                            }}
-                        ]
-                    }
-            }
-        }},
-        {authorities, #{
-            ?TK_AUTHORITY_APIKEYMGMT =>
-                #{
-                    service => #{
-                        path => <<"/v2/authority/com.rbkmoney.apikemgmt">>
-                    },
-                    type =>
-                        {offline, #{
-                            token => #{
-                                type => jwt
-                            },
-                            storage => #{
-                                name => ?TK_AUTHORITY_APIKEYMGMT
-                            }
-                        }}
-                }
-        }},
-        {tokens, #{
-            jwt => #{
-                authority_bindings => #{
-                    ?TK_AUTHORITY_APIKEYMGMT => ?TK_AUTHORITY_APIKEYMGMT
-                },
-                keyset => #{
-                    ?TK_AUTHORITY_APIKEYMGMT => #{
-                        source => {pem_file, get_filename("keys/local/private.pem", C)}
-                    }
-                }
-            }
-        }},
-        {storages, #{
-            ?TK_AUTHORITY_APIKEYMGMT =>
-                {machinegun, #{
-                    namespace => apikeymgmt,
-                    automaton => #{
-                        url => <<"http://machinegun:8022/v1/automaton">>,
-                        event_handler => [scoper_woody_event_handler],
-                        transport_opts => #{}
-                    }
+        tk_ct_config:authenticator(AuthenticatorPath, #{
+            ?TK_AUTHORITY_APIKEYMGMT => [
+                {storage, #{
+                    name => ?TK_AUTHORITY_APIKEYMGMT
                 }}
-        }}
+            ]
+        }),
+        tk_ct_config:authorities(#{
+            ?TK_AUTHORITY_CAPI => tk_ct_config:offline_authority(AuthorityPath, jwt, ?TK_AUTHORITY_APIKEYMGMT)
+        }),
+        tk_ct_config:jwt_tokens(
+            #{?TK_KEY_APIKEYMGMT => ?TK_AUTHORITY_APIKEYMGMT},
+            #{?TK_KEY_APIKEYMGMT => {pem_file, get_filename("keys/local/private.pem", C)}}
+        ),
+        tk_ct_config:storages(#{
+            ?TK_AUTHORITY_APIKEYMGMT => tk_ct_config:machinegun_storage(
+                apikeymgmt, <<"http://machinegun:8022/v1/automaton">>
+            )
+        })
     ]),
     ServiceUrls = #{
-        token_authenticator => mk_url(<<"/v2/authenticator">>),
-        {token_authority, ?TK_AUTHORITY_APIKEYMGMT} => mk_url(<<"/v2/authority/com.rbkmoney.apikemgmt">>)
+        token_authenticator => mk_url(AuthenticatorPath),
+        {token_authority, ?TK_AUTHORITY_APIKEYMGMT} => mk_url(AuthorityPath)
     },
     [{groupname, Name}, {service_urls, ServiceUrls} | C0 ++ C].
 
@@ -361,6 +244,13 @@ authenticate_invalid_token_type_fail(C) ->
 authenticate_invalid_token_key_fail(C) ->
     Token = issue_dummy_token(C),
     ?assertThrow(#token_keeper_InvalidToken{}, call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C)).
+
+-spec authenticate_no_payload_claims_fail(config()) -> _.
+authenticate_no_payload_claims_fail(C) ->
+    JTI = unique_id(),
+    Claims = get_base_claims(JTI),
+    Token = issue_token(Claims, C),
+    ?assertThrow(#token_keeper_AuthDataNotFound{}, call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C)).
 
 -spec authenticate_phony_api_key_token_ok(config()) -> _.
 authenticate_phony_api_key_token_ok(C) ->
@@ -399,6 +289,13 @@ authenticate_user_session_token_ok(C) ->
     } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C),
     _ = assert_context({user_session_token, JTI, SubjectID, SubjectEmail, unlimited}, Context).
 
+-spec authenticate_user_session_token_no_payload_claims_fail(config()) -> _.
+authenticate_user_session_token_no_payload_claims_fail(C) ->
+    JTI = unique_id(),
+    Claims = get_base_claims(JTI),
+    Token = issue_token(Claims, C),
+    ?assertThrow(#token_keeper_AuthDataNotFound{}, call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C)).
+
 -spec authenticate_blacklisted_jti_fail(config()) -> _.
 authenticate_blacklisted_jti_fail(C) ->
     JTI = <<"MYCOOLKEY">>,
@@ -414,14 +311,6 @@ authenticate_non_blacklisted_jti_ok(C) ->
     Claims = get_phony_api_key_claims(JTI, SubjectID),
     Token = issue_token_with(Claims, get_filename("keys/secondary/private.pem", C)),
     ?assertMatch(#token_keeper_AuthData{}, call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C)).
-
--spec authenticate_claim_token_no_context_fail(config()) -> _.
-authenticate_claim_token_no_context_fail(C) ->
-    JTI = unique_id(),
-    SubjectID = unique_id(),
-    Claims = get_base_claims(JTI, SubjectID),
-    Token = issue_token(Claims, C),
-    ?assertThrow(#token_keeper_AuthDataNotFound{}, call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C)).
 
 -spec authenticate_ephemeral_claim_token_ok(config()) -> _.
 authenticate_ephemeral_claim_token_ok(C) ->
@@ -461,8 +350,7 @@ issue_ephemeral_token_ok(C) ->
 -spec authenticate_offline_token_not_found_fail(config()) -> _.
 authenticate_offline_token_not_found_fail(C) ->
     JTI = unique_id(),
-    SubjectID = unique_id(),
-    Claims = get_base_claims(JTI, SubjectID),
+    Claims = get_base_claims(JTI),
     Token = issue_token(Claims, C),
     ?assertThrow(#token_keeper_AuthDataNotFound{}, call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C)).
 
@@ -582,18 +470,17 @@ revoke_authdata_by_id_not_found_fail(C) ->
 
 %%
 
-get_base_claims(JTI, SubjectID) ->
+get_base_claims(JTI) ->
     #{
         <<"jti">> => JTI,
-        <<"sub">> => SubjectID,
         <<"exp">> => 0
     }.
 
 get_phony_api_key_claims(JTI, SubjectID) ->
-    get_base_claims(JTI, SubjectID).
+    maps:merge(#{<<"sub">> => SubjectID}, get_base_claims(JTI)).
 
 get_user_session_token_claims(JTI, SubjectID, SubjectEmail) ->
-    maps:merge(#{<<"email">> => SubjectEmail}, get_base_claims(JTI, SubjectID)).
+    maps:merge(#{<<"sub">> => SubjectID, <<"email">> => SubjectEmail}, get_base_claims(JTI)).
 
 create_bouncer_context(JTI) ->
     bouncer_context_helpers:add_auth(
@@ -754,19 +641,12 @@ unique_id() ->
     genlib_format:format_int_base(ID, 62).
 
 %%
-
-start_keeper(Authorities) ->
-    start_keeper(Authorities, undefined).
-
-start_keeper(Env, BlacklistPath) ->
+start_keeper(Env) ->
     Port = 8022,
     Apps = genlib_app:start_application_with(
         token_keeper,
         [
             {port, Port},
-            {blacklist, #{
-                path => BlacklistPath
-            }},
             {machinegun, #{
                 processor => #{
                     path => <<"/v2/stateproc">>
