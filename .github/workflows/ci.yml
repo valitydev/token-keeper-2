@@ -2,7 +2,9 @@ name: Erlang Service CI
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - 'master'
+      - 'epic/**'
   pull_request:
     branches: [ '**' ]
 
@@ -21,7 +23,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-build-${{ hashFiles('**/rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
 
       - name: Compile
         run: make wc-compile
@@ -41,7 +45,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-build-${{ hashFiles('**/rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
       
       - name: Check formatting
         run: make wc-check-format
@@ -67,14 +73,14 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-build-${{ hashFiles('**/rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
 
       - name: Cache PLTs
         uses: actions/cache@v2
         with:
-          path: |
-            ~/.cache/rebar3/rebar3_*_plt
-            _build/test/rebar3_*_plt
+          path: _build/test/rebar3_*_plt
           key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-plt-${{ hashFiles('**/rebar.lock') }}
           restore-keys: |
             ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-plt-      
@@ -97,7 +103,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-build-${{ hashFiles('**/rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
 
       - name: Run EUnit
         run: make wc-eunit
