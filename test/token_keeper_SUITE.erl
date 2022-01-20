@@ -133,11 +133,11 @@ end_per_suite(C) ->
 init_per_group(external_detect_token = Name, C) ->
     AuthenticatorPath = <<"/v2/authenticator">>,
     C0 = start_keeper([
-        tk_ct_config:authenticator(
+        config_authenticator(
             AuthenticatorPath,
-            #{?TK_AUTHORITY_KEYCLOAK => [extract_method_detect_token()]}
+            #{?TK_AUTHORITY_KEYCLOAK => [config_extract_method_detect_token()]}
         ),
-        tk_ct_config:jwt_tokens(
+        config_jwt_tokens(
             #{?TK_KEY_KEYCLOAK => ?TK_AUTHORITY_KEYCLOAK},
             #{?TK_KEY_KEYCLOAK => {pem_file, get_filename("keys/local/public.pem", C)}}
         )
@@ -149,14 +149,14 @@ init_per_group(external_detect_token = Name, C) ->
 init_per_group(blacklist = Name, C) ->
     AuthenticatorPath = <<"/v2/authenticator">>,
     C0 = start_keeper([
-        tk_ct_config:authenticator(
+        config_authenticator(
             AuthenticatorPath,
             #{
-                <<"blacklisting_authority">> => [extract_method_detect_token()],
-                ?TK_AUTHORITY_CAPI => [extract_method_detect_token()]
+                <<"blacklisting_authority">> => [config_extract_method_detect_token()],
+                ?TK_AUTHORITY_CAPI => [config_extract_method_detect_token()]
             }
         ),
-        tk_ct_config:jwt_tokens(
+        config_jwt_tokens(
             #{
                 <<"blacklisting_authority.key">> => <<"blacklisting_authority">>,
                 ?TK_KEY_CAPI => ?TK_AUTHORITY_CAPI
@@ -166,7 +166,7 @@ init_per_group(blacklist = Name, C) ->
                 ?TK_KEY_CAPI => {pem_file, get_filename("keys/secondary/private.pem", C)}
             }
         ),
-        tk_ct_config:blacklist(get_filename("blacklisted_keys.yaml", C))
+        config_blacklist(get_filename("blacklisted_keys.yaml", C))
     ]),
     ServiceUrls = #{
         token_authenticator => mk_url(AuthenticatorPath)
@@ -176,11 +176,11 @@ init_per_group(ephemeral = Name, C) ->
     AuthenticatorPath = <<"/v2/authenticator">>,
     AuthorityPath = <<"/v2/authority/com.rbkmoney.access.capi">>,
     C0 = start_keeper([
-        tk_ct_config:authenticator(AuthenticatorPath, #{?TK_AUTHORITY_CAPI => [{claim, #{}}]}),
-        tk_ct_config:authorities(#{
-            ?TK_AUTHORITY_CAPI => tk_ct_config:ephemeral_authority(AuthorityPath, jwt)
-        }),
-        tk_ct_config:jwt_tokens(
+        config_authenticator(AuthenticatorPath, #{?TK_AUTHORITY_CAPI => [{claim, #{}}]}),
+        {authorities, #{
+            ?TK_AUTHORITY_CAPI => config_ephemeral_authority(AuthorityPath, jwt)
+        }},
+        config_jwt_tokens(
             #{?TK_KEY_CAPI => ?TK_AUTHORITY_CAPI},
             #{?TK_KEY_CAPI => {pem_file, get_filename("keys/local/private.pem", C)}}
         )
@@ -194,25 +194,25 @@ init_per_group(offline = Name, C) ->
     AuthenticatorPath = <<"/v2/authenticator">>,
     AuthorityPath = <<"/v2/authority/com.rbkmoney.apikemgmt">>,
     C0 = start_keeper([
-        tk_ct_config:authenticator(AuthenticatorPath, #{
+        config_authenticator(AuthenticatorPath, #{
             ?TK_AUTHORITY_APIKEYMGMT => [
                 {storage, #{
                     name => ?TK_AUTHORITY_APIKEYMGMT
                 }}
             ]
         }),
-        tk_ct_config:authorities(#{
-            ?TK_AUTHORITY_CAPI => tk_ct_config:offline_authority(AuthorityPath, jwt, ?TK_AUTHORITY_APIKEYMGMT)
-        }),
-        tk_ct_config:jwt_tokens(
+        {authorities, #{
+            ?TK_AUTHORITY_CAPI => config_offline_authority(AuthorityPath, jwt, ?TK_AUTHORITY_APIKEYMGMT)
+        }},
+        config_jwt_tokens(
             #{?TK_KEY_APIKEYMGMT => ?TK_AUTHORITY_APIKEYMGMT},
             #{?TK_KEY_APIKEYMGMT => {pem_file, get_filename("keys/local/private.pem", C)}}
         ),
-        tk_ct_config:storages(#{
-            ?TK_AUTHORITY_APIKEYMGMT => tk_ct_config:machinegun_storage(
+        {storages, #{
+            ?TK_AUTHORITY_APIKEYMGMT => config_machinegun_storage(
                 apikeymgmt, <<"http://machinegun:8022/v1/automaton">>
             )
-        })
+        }}
     ]),
     ServiceUrls = #{
         token_authenticator => mk_url(AuthenticatorPath),
@@ -294,7 +294,10 @@ authenticate_user_session_token_no_payload_claims_fail(C) ->
     JTI = unique_id(),
     Claims = get_base_claims(JTI),
     Token = issue_token(Claims, C),
-    ?assertThrow(#token_keeper_AuthDataNotFound{}, call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C)).
+    ?assertThrow(
+        #token_keeper_AuthDataNotFound{},
+        call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C)
+    ).
 
 -spec authenticate_blacklisted_jti_fail(config()) -> _.
 authenticate_blacklisted_jti_fail(C) ->
@@ -665,7 +668,63 @@ mk_url(Path) ->
 mk_url(IP, Port, Path) ->
     iolist_to_binary(["http://", IP, ":", genlib:to_binary(Port), Path]).
 
-extract_method_detect_token() ->
+%%
+
+config_authenticator(HandlerPath, Authorities) ->
+    {authenticator, #{
+        service => #{
+            path => HandlerPath
+        },
+        authorities => make_config_authenticator_authoritites(Authorities)
+    }}.
+
+config_ephemeral_authority(Path, TokenType) ->
+    make_config_authority(
+        Path,
+        {ephemeral, #{
+            token => #{
+                type => TokenType
+            }
+        }}
+    ).
+
+config_offline_authority(Path, TokenType, StorageName) ->
+    make_config_authority(
+        Path,
+        {offline, #{
+            token => #{
+                type => TokenType
+            },
+            storage => #{
+                name => StorageName
+            }
+        }}
+    ).
+
+config_jwt_tokens(Bindings, Keyset) ->
+    {tokens, #{
+        jwt => #{
+            authority_bindings => Bindings,
+            keyset => make_config_jwt_keyset(Keyset)
+        }
+    }}.
+
+config_blacklist(Path) ->
+    {blacklist, #{
+        path => Path
+    }}.
+
+config_machinegun_storage(Namespace, Url) ->
+    {machinegun, #{
+        namespace => Namespace,
+        automaton => #{
+            url => Url,
+            event_handler => [scoper_woody_event_handler],
+            transport_opts => #{}
+        }
+    }}.
+
+config_extract_method_detect_token() ->
     {extract_context, #{
         methods => [
             {detect_token, #{
@@ -686,3 +745,29 @@ extract_method_detect_token() ->
             }}
         ]
     }}.
+
+%%
+
+make_config_authority(Path, Type) ->
+    #{
+        service => #{
+            path => Path
+        },
+        type => Type
+    }.
+
+make_config_authenticator_authoritites(Authorities) ->
+    maps:map(
+        fun(_, Sources) ->
+            #{sources => Sources}
+        end,
+        Authorities
+    ).
+
+make_config_jwt_keyset(Keyset) ->
+    maps:map(
+        fun(_, Source) ->
+            #{source => Source}
+        end,
+        Keyset
+    ).
