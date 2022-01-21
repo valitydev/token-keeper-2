@@ -22,7 +22,7 @@
 -spec extract_context(tk_token:token_data(), opts()) -> tk_context_extractor:extracted_context() | undefined.
 extract_context(#{id := TokenID, payload := Payload}, Opts) ->
     case extract_party_data(Payload) of
-        {ok, {PartyID}} ->
+        {ok, PartyID} ->
             create_context_and_metadata(TokenID, PartyID, Opts);
         {error, Reason} ->
             _ = logger:warning("Could not extract phony_api_key context, reason: ~p", [Reason]),
@@ -43,7 +43,7 @@ create_context_and_metadata(TokenID, PartyID, Opts) ->
 extract_party_data(#{
     ?CLAIM_PARTY_ID := PartyID
 }) ->
-    {ok, {PartyID}};
+    {ok, PartyID};
 extract_party_data(_) ->
     {error, {missing, ?CLAIM_PARTY_ID}}.
 

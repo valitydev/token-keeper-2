@@ -51,8 +51,8 @@ extract_user_data(#{
 }) ->
     {ok, {UserID, UserEmail}};
 extract_user_data(Payload) ->
-    Required = [?CLAIM_USER_ID, ?CLAIM_USER_EMAIL],
-    {error, {missing, get_missing_keys(Payload, Required)}}.
+    RequiredKeys = [?CLAIM_USER_ID, ?CLAIM_USER_EMAIL],
+    {error, {missing, RequiredKeys -- maps:keys(Payload)}}.
 
 create_context(TokenID, TokenExpiration, UserID, UserEmail, UserRealm) ->
     Acc0 = bouncer_context_helpers:empty(),
@@ -88,15 +88,3 @@ create_metadata(UserID, UserEmail, UserRealm) ->
 wrap_metadata(Metadata, ExtractorOpts) ->
     Mappings = maps:get(metadata_mappings, ExtractorOpts),
     tk_utils:remap(genlib_map:compact(Metadata), Mappings).
-
-get_missing_keys(Map, RequiredKeys) ->
-    lists:foldl(
-        fun(Key, Acc) ->
-            case maps:is_key(Key, Map) of
-                true -> Acc;
-                false -> [Key | Acc]
-            end
-        end,
-        [],
-        RequiredKeys
-    ).

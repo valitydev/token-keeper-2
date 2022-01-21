@@ -14,8 +14,6 @@ services:
       - $HOME/.cache:/home/$UNAME/.cache
     depends_on:
       - machinegun
-    expose:
-      - "8022"
     working_dir: $PWD
     command: /sbin/init
 
