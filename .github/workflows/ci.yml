@@ -23,7 +23,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('rebar.lock') }}
           restore-keys: |
             ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
 
@@ -45,7 +45,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('rebar.lock') }}
           restore-keys: |
             ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
       
@@ -73,7 +73,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('rebar.lock') }}
           restore-keys: |
             ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
 
@@ -81,7 +81,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/test/rebar3_*_plt
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-plt-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-plt-${{ hashFiles('rebar.lock') }}
           restore-keys: |
             ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-plt-      
 
@@ -103,7 +103,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('**/rebar.lock') }}
+          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('rebar.lock') }}
           restore-keys: |
             ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
 
