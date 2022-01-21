@@ -134,7 +134,7 @@ jobs:
           COMPOSE_DOCKER_CLI_BUILD: true
           DOCKER_BUILDKIT: true
         run: |
-          docker-compose run --use-aliases --rm ${{ inputs.service-name }} rebar3 ct --cover
+          docker-compose run --use-aliases --rm token-keeper rebar3 ct --cover
 
       - name: Store CT Logs
         if: ${{ failure() && steps.run-common-test.outcome == 'failure' }}
