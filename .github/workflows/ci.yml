@@ -99,20 +99,42 @@ jobs:
       - name: Update environment variables
         run: grep -v '^#' .env >> $GITHUB_ENV
 
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1.10
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: ${{ env.REBAR_VERSION }}
+
       - name: Cache _build
         uses: actions/cache@v2
         with:
           path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('rebar.lock') }}
+          key: ${{ runner.os }}-otp-${{ inputs.otp-version }}-build-${{ hashFiles('rebar.lock') }}
           restore-keys: |
-            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
+            ${{ runner.os }}-otp-${{ inputs.otp-version }}-build-
 
+      - name: Setup Thrift compiler
+        uses: valitydev/action-setup-thrift@v0.0.5
+        with:
+          thrift-version: ${{ env.THRIFT_VERSION }}
+      
       - name: Run EUnit
-        run: make wc-eunit
+        run: rebar3 eunit --cover
 
-      - name: Run CT
+      # - name: Run CT
+      #   id: run-common-test
+      #   run: make wdeps-common-test
+
+      - name: Run CommonTest (/w docker-compose)
         id: run-common-test
-        run: make wdeps-common-test
+        env:
+          DEV_IMAGE_TAG: token-keeper-dev
+          # OTP_VERSION: ${{ inputs.otp-version }}
+          # THRIFT_VERSION: ${{ inputs.thrift-version }}
+          COMPOSE_DOCKER_CLI_BUILD: true
+          DOCKER_BUILDKIT: true
+        run: |
+          docker-compose run --use-aliases --rm ${{ inputs.service-name }} rebar3 ct --cover
 
       - name: Store CT Logs
         if: ${{ failure() && steps.run-common-test.outcome == 'failure' }}
@@ -122,7 +144,7 @@ jobs:
           path: _build/test/logs
 
       - name: Run test coverage analysis
-        run: make wc-cover
+        run: rebar3 covertool generate
 
       - name: Upload coverage statistics
         uses: codecov/codecov-action@v2
