@@ -31,6 +31,8 @@ jobs:
     needs: setup
     uses: valitydev/erlang-workflows/.github/workflows/erlang-parallel-build.yml@c1429af97ce1c0f96afcd2698821e90402b1bed9
     with:
+      service-name: "token-keeper"
+      run-ct-with-compose: true
       otp-version: ${{ needs.setup.outputs.otp-version }}
       rebar-version: ${{ needs.setup.outputs.rebar-version }}
       use-thrift: true
