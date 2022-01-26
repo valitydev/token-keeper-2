@@ -1,4 +1,4 @@
-name: Erlang Service CI
+name: CI Checks
 
 on:
   push:
@@ -9,122 +9,28 @@ on:
     branches: [ '**' ]
 
 jobs:
-  build:
-    name: Build
+  setup:
+    name: Load .env
     runs-on: ubuntu-latest
+    outputs:
+      otp-version: ${{ steps.otp-version.outputs.version }}
+      rebar-version: ${{ steps.rebar-version.outputs.version }}
+      thrift-version: ${{ steps.thrift-version.outputs.version }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
+      - run: grep -v '^#' .env >> $GITHUB_ENV
+      - id: otp-version
+        run: echo "::set-output name=version::$OTP_VERSION"
+      - id: rebar-version
+        run: echo "::set-output name=version::$REBAR_VERSION"
+      - id: thrift-version
+        run: echo "::set-output name=version::$THRIFT_VERSION"
 
-      - name: Update environment variables
-        run: grep -v '^#' .env >> $GITHUB_ENV
-
-      - name: Cache _build
-        uses: actions/cache@v2
-        with:
-          path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('rebar.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
-
-      - name: Compile
-        run: make wc-compile
-
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Update environment variables
-        run: grep -v '^#' .env >> $GITHUB_ENV
-
-      - name: Cache _build
-        uses: actions/cache@v2
-        with:
-          path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('rebar.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
-      
-      - name: Check formatting
-        run: make wc-check-format
-      
-      - name: Run linting
-        run: make wc-lint
-
-      - name: Run xref
-        run: make wc-xref
-
-  dialyze:
-    name: Dialyze
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Update environment variables
-        run: grep -v '^#' .env >> $GITHUB_ENV
-
-      - name: Cache _build
-        uses: actions/cache@v2
-        with:
-          path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('rebar.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
-
-      - name: Cache PLTs
-        uses: actions/cache@v2
-        with:
-          path: _build/test/rebar3_*_plt
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-plt-${{ hashFiles('rebar.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-plt-      
-
-      - name: Run dialyzer
-        run: make wc-dialyze
-
-  test:
-    name: Test
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Update environment variables
-        run: grep -v '^#' .env >> $GITHUB_ENV
-
-      - name: Cache _build
-        uses: actions/cache@v2
-        with:
-          path: _build/*/lib
-          key: ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-${{ hashFiles('rebar.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-otp-${{ env.OTP_VERSION }}-build-
-
-      - name: Run EUnit
-        run: make wc-eunit
-
-      - name: Run CT
-        id: run-common-test
-        run: make wdeps-common-test
-
-      - name: Store CT Logs
-        if: ${{ failure() && steps.run-common-test.outcome == 'failure' }}
-        uses: actions/upload-artifact@v2
-        with:
-          name: ct-logs
-          path: _build/test/logs
-
-      - name: Run test coverage analysis
-        run: make wc-cover
-
-      - name: Upload coverage statistics
-        uses: codecov/codecov-action@v2
-        with:
-          files: _build/test/covertool/*.covertool.xml
+  run:
+    needs: setup
+    uses: valitydev/erlang-workflows/.github/workflows/erlang-parallel-build.yml@7629f0e5e38aaf5c6ed8713af1f6a45dbc70d984
+    with:
+      otp-version: ${{ needs.setup.outputs.otp-version }}
+      rebar-version: ${{ needs.setup.outputs.rebar-version }}
+      use-thrift: true
+      thrift-version: ${{ needs.setup.outputs.thrift-version }}
+      use-swagger-codegen: true
