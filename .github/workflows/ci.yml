@@ -1,4 +1,4 @@
-name: CI Checks
+name: Erlang CI Checks
 
 on:
   push:
@@ -28,6 +28,7 @@ jobs:
         run: echo "::set-output name=version::$THRIFT_VERSION"
 
   run:
+    name: Run checks
     needs: setup
     uses: valitydev/erlang-workflows/.github/workflows/erlang-parallel-build.yml@c1429af97ce1c0f96afcd2698821e90402b1bed9
     with:
