@@ -3,8 +3,6 @@
 # For example, to run with podman put `DOCKER=podman` there.
 -include Makefile.env
 
-SERVICE := testrunner
-
 # NOTE
 # Variables specified in `.env` file are used to pick and setup specific
 # component versions, both when building a development image and when running
@@ -15,12 +13,13 @@ DOTENV := $(shell grep -v '^\#' .env)
 DOCKER ?= docker
 DOCKERCOMPOSE ?= docker-compose
 REBAR ?= rebar3
+TEST_CONTAINER_NAME ?= testrunner
 
 all: compile
 
 # Development images
 
-DEV_IMAGE_TAG = $(SERVICE)-dev
+DEV_IMAGE_TAG = $(TEST_CONTAINER_NAME)-dev
 DEV_IMAGE_ID = $(file < .image.dev)
 
 # Enable buildkit extensions in compose
@@ -31,7 +30,7 @@ DOCKER_COMPOSE_BUILD_ENV = COMPOSE_DOCKER_CLI_BUILD=1 DOCKER_BUILDKIT=1
 dev-image: .image.dev
 
 .image.dev: Dockerfile.dev .env
-	env $(DOTENV) DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKER_COMPOSE_BUILD_ENV) $(DOCKERCOMPOSE) build $(SERVICE)
+	env $(DOTENV) DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKER_COMPOSE_BUILD_ENV) $(DOCKERCOMPOSE) build $(TEST_CONTAINER_NAME)
 	$(DOCKER) image ls -q -f "reference=$(DEV_IMAGE_ID)" | head -n1 > $@
 
 clean-dev-image:
@@ -44,7 +43,7 @@ DOCKER_WC_OPTIONS := -v $(PWD):$(PWD) --workdir $(PWD)
 DOCKER_WC_EXTRA_OPTIONS ?= --rm
 DOCKER_RUN = $(DOCKER) run -t $(DOCKER_WC_OPTIONS) $(DOCKER_WC_EXTRA_OPTIONS)
 
-DOCKERCOMPOSE_RUN = DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) run --name $(SERVICE) --rm $(DOCKER_WC_OPTIONS)
+DOCKERCOMPOSE_RUN = DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) run --name $(TEST_CONTAINER_NAME) --rm $(DOCKER_WC_OPTIONS)
 
 wc-shell: dev-image
 	$(DOCKER_RUN) --interactive --tty $(DEV_IMAGE_TAG)
@@ -54,10 +53,10 @@ wc-%: dev-image
 
 #  TODO docker compose down doesn't work yet
 wdeps-shell: dev-image
-	$(DOCKERCOMPOSE_RUN) $(SERVICE) su
+	$(DOCKERCOMPOSE_RUN) $(TEST_CONTAINER_NAME) su
 
 wdeps-%: dev-image
-	$(DOCKERCOMPOSE_RUN) $(SERVICE) make $*
+	$(DOCKERCOMPOSE_RUN) $(TEST_CONTAINER_NAME) make $*
 
 # CI-required tasks
 
