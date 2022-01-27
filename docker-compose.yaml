@@ -11,6 +11,7 @@ services:
         THRIFT_VERSION: $THRIFT_VERSION
     volumes:
       - .:$PWD
+    hostname: token-keeper
     depends_on:
       - machinegun
     working_dir: $PWD
