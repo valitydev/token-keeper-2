@@ -1,7 +1,7 @@
 version: '3'
 services:
   
-  token-keeper: # Keep in sync with $(SERVICE)
+  testrunner:
     image: $DEV_IMAGE_TAG
     build:
       dockerfile: Dockerfile.dev
@@ -11,7 +11,6 @@ services:
         THRIFT_VERSION: $THRIFT_VERSION
     volumes:
       - .:$PWD
-      - $HOME/.cache:/home/$UNAME/.cache
     depends_on:
       - machinegun
     working_dir: $PWD
