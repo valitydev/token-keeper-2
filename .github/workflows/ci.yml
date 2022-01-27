@@ -30,7 +30,7 @@ jobs:
   run:
     name: Run checks
     needs: setup
-    uses: valitydev/erlang-workflows/.github/workflows/erlang-parallel-build.yml@882ffb229d6ac997f4dfdd41e1f7612190818050
+    uses: valitydev/erlang-workflows/.github/workflows/erlang-parallel-build.yml@ea4d852
     with:
       service-name: "token-keeper"
       run-ct-with-compose: true
