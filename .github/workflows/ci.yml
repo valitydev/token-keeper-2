@@ -37,4 +37,3 @@ jobs:
       use-thrift: true
       thrift-version: ${{ needs.setup.outputs.thrift-version }}
       run-ct-with-compose: true
-      use-swagger-codegen: true
