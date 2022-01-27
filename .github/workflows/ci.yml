@@ -30,7 +30,7 @@ jobs:
   run:
     name: Run checks
     needs: setup
-    uses: valitydev/erlang-workflows/.github/workflows/erlang-parallel-build.yml@9a7c416d60ec74a83771cd88447438b88be5e324
+    uses: valitydev/erlang-workflows/.github/workflows/erlang-parallel-build.yml@882ffb229d6ac997f4dfdd41e1f7612190818050
     with:
       service-name: "token-keeper"
       run-ct-with-compose: true
@@ -38,3 +38,4 @@ jobs:
       rebar-version: ${{ needs.setup.outputs.rebar-version }}
       use-thrift: true
       thrift-version: ${{ needs.setup.outputs.thrift-version }}
+      use-swagger-codegen: true
