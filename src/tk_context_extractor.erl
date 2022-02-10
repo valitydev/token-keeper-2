@@ -14,8 +14,7 @@
 -type method_opts() ::
     {detect_token, tk_context_extractor_detect_token:opts()}
     | {phony_api_key, tk_context_extractor_phony_api_key:opts()}
-    | {user_session_token, tk_context_extractor_user_session_token:opts()}
-    | {invoice_template_access_token, tk_context_extractor_invoice_tpl_token:opts()}.
+    | {user_session_token, tk_context_extractor_user_session_token:opts()}.
 -type extracted_context() :: {context_fragment(), tk_authdata:metadata() | undefined}.
 
 -export_type([methods/0]).
@@ -29,8 +28,7 @@
 -type opts() ::
     tk_context_extractor_detect_token:opts()
     | tk_context_extractor_phony_api_key:opts()
-    | tk_context_extractor_user_session_token:opts()
-    | tk_context_extractor_invoice_tpl_token:opts().
+    | tk_context_extractor_user_session_token:opts().
 
 %% API functions
 
@@ -40,8 +38,6 @@ extract_context({detect_token, Opts}, TokenData) ->
 extract_context({phony_api_key, Opts}, TokenData) ->
     tk_context_extractor_phony_api_key:extract_context(TokenData, Opts);
 extract_context({user_session_token, Opts}, TokenData) ->
-    tk_context_extractor_user_session_token:extract_context(TokenData, Opts);
-extract_context({invoice_template_access_token, Opts}, TokenData) ->
-    tk_context_extractor_invoice_tpl_token:extract_context(TokenData, Opts).
+    tk_context_extractor_user_session_token:extract_context(TokenData, Opts).
 
 %% Internal functions

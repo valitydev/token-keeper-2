@@ -27,7 +27,7 @@
     source := keysource()
 }.
 
--type authority_bindings() :: #{authority_id() => key_name()}.
+-type authority_bindings() :: #{key_name() => authority_id()}.
 -type keyset() :: #{key_name() => key_opts()}.
 
 -export_type([opts/0]).
@@ -83,35 +83,34 @@ init(#{keyset := KeySet, authority_bindings := AuthorityBindings}) ->
     | {error,
         {alg_not_supported, Alg :: atom()}
         | {key_not_found, KID :: atom()}
+        | {no_authority_for_keyname, KeyName :: binary()}
         | {invalid_token, Reason :: term()}
         | invalid_signature}.
 verify(Token, SourceContext) ->
     case do_verify(Token) of
         {ok, {Claims, KeyName}} ->
-            {ok, construct_token_data(Claims, SourceContext, get_authority_of_key_name(KeyName))};
+            case get_authority_of_key_name(KeyName) of
+                AuthorityID when AuthorityID =/= undefined ->
+                    {ok, construct_token_data(Claims, SourceContext, AuthorityID)};
+                undefined ->
+                    {error, {no_authority_for_keyname, KeyName}}
+            end;
         {error, _} = Error ->
             Error
     end.
 
 -spec issue(token_data()) ->
     {ok, token_string()}
-    | {error, issuing_not_supported | key_does_not_exist | authority_does_not_exist}.
+    | {error,
+        issuing_not_supported
+        | {key_does_not_exist, KeyName :: binary()}
+        | {authority_does_not_exist, AuthorityID :: binary()}}.
 issue(#{authority_id := AuthorityID} = TokenData) ->
     case get_key_name_of_authority(AuthorityID) of
         KeyName when KeyName =/= undefined ->
-            case get_key_by_name(KeyName) of
-                #{} = KeyInfo ->
-                    case key_supports_signing(KeyInfo) of
-                        true ->
-                            {ok, issue_with_key(KeyInfo, TokenData)};
-                        false ->
-                            {error, issuing_not_supported}
-                    end;
-                undefined ->
-                    {error, key_does_not_exist}
-            end;
+            issue_with_key(KeyName, TokenData);
         undefined ->
-            {error, authority_does_not_exist}
+            {error, {authority_does_not_exist, AuthorityID}}
     end.
 
 %% Internal functions
@@ -259,16 +258,18 @@ decode_expiration(Expiration) when is_integer(Expiration) ->
 
 %% Signing
 
-key_supports_signing(#{signer := #{}}) ->
-    true;
-key_supports_signing(#{signer := undefined}) ->
-    false.
-
-issue_with_key(#{key_id := KeyID, jwk := JWK, signer := #{} = JWS}, TokenData) ->
-    Claims = construct_claims(TokenData),
-    JWT = jose_jwt:sign(JWK, JWS#{<<"kid">> => KeyID}, Claims),
-    {_Modules, Token} = jose_jws:compact(JWT),
-    Token.
+issue_with_key(KeyName, TokenData) ->
+    case get_key_by_name(KeyName) of
+        #{key_id := KeyID, jwk := JWK, signer := #{} = JWS} ->
+            Claims = construct_claims(TokenData),
+            JWT = jose_jwt:sign(JWK, JWS#{<<"kid">> => KeyID}, Claims),
+            {_Modules, Token} = jose_jws:compact(JWT),
+            {ok, Token};
+        #{key_id := _, jwk := _, signer := undefined} ->
+            {error, {issuing_not_supported, KeyName}};
+        undefined ->
+            {error, {key_does_not_exist, KeyName}}
+    end.
 
 construct_claims(#{id := TokenID, expiration := Expiration, payload := Claims}) ->
     maps:map(fun encode_claim/2, Claims#{
