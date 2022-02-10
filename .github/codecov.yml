@@ -7,5 +7,5 @@ coverage:
         threshold: 0%
     patch:
       default:
-        # Force new code to be at least 70% covered
-        target: 70%
+        # Force new code to be at least 80% covered
+        target: 80%
