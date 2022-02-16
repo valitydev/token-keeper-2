@@ -43,6 +43,10 @@ init([]) ->
     TokenBlacklistSpec = tk_blacklist:child_spec(genlib_app:env(?MODULE, blacklist, #{})),
     TokensSpecs = tk_token:child_specs(genlib_app:env(?MODULE, tokens, #{})),
     StoragesSpecs = tk_storage:child_specs(genlib_app:env(?MODULE, storages, #{})),
+    AdditionalRoutes = [
+        get_prometheus_route(),
+        get_health_route()
+    ],
     HandlerChildSpec = woody_server:child_spec(
         ?MODULE,
         #{
@@ -53,7 +57,7 @@ init([]) ->
             shutdown_timeout => get_shutdown_timeout(),
             event_handler => EventHandlers,
             handlers => get_woody_handlers(AuditPulse),
-            additional_routes => [get_health_route() | get_machinegun_processor_routes(EventHandlers)]
+            additional_routes => AdditionalRoutes ++ get_machinegun_processor_routes(EventHandlers)
         }
     ),
     {ok, {
@@ -147,3 +151,7 @@ get_audit_specs() ->
         disable ->
             {[], []}
     end.
+
+-spec get_prometheus_route() -> {iodata(), module(), _Opts :: any()}.
+get_prometheus_route() ->
+    {"/metrics/[:registry]", prometheus_cowboy2_handler, []}.
