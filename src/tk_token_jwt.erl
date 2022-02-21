@@ -47,7 +47,6 @@
 %%
 
 -define(CLAIM_TOKEN_ID, <<"jti">>).
--define(CLAIM_EXPIRES_AT, <<"exp">>).
 
 -define(PTERM_KEY(Key), {?MODULE, Key}).
 -define(KEY_BY_KEY_ID(KeyID), ?PTERM_KEY({key_id, KeyID})).
@@ -72,6 +71,7 @@ child_spec(TokenOpts) ->
 init(#{keyset := KeySet, authority_bindings := AuthorityBindings}) ->
     Keys = load_keys(KeySet),
     _ = assert_keys_unique(Keys),
+    _ = assert_bindings_unique(AuthorityBindings),
     _ = store_keys(Keys),
     _ = store_authority_bindings(AuthorityBindings),
     {ok, {#{}, []}}.
@@ -180,6 +180,17 @@ assert_key_unique(#{key_id := KeyID, key_name := KeyName}, SeenKeyIDs) ->
 
 %%
 
+assert_bindings_unique(Bindings) ->
+    maps:fold(fun assert_bindings_unique/3, [], Bindings).
+
+assert_bindings_unique(Key, Value, SeenBindings) ->
+    case lists:member(Value, SeenBindings) of
+        true -> exit({import_error, {duplicate_authority_binding, Key, Value}});
+        false -> [Value | SeenBindings]
+    end.
+
+%%
+
 store_keys(KeyInfos) ->
     lists:foreach(fun store_key/1, KeyInfos).
 
@@ -245,16 +256,10 @@ construct_token_data(Claims, SourceContext, AuthorityID) ->
     #{
         id => maps:get(?CLAIM_TOKEN_ID, Claims),
         type => jwt,
-        expiration => decode_expiration(maps:get(?CLAIM_EXPIRES_AT, Claims)),
         payload => Claims,
         authority_id => AuthorityID,
         source_context => SourceContext
     }.
-
-decode_expiration(0) ->
-    unlimited;
-decode_expiration(Expiration) when is_integer(Expiration) ->
-    Expiration.
 
 %% Signing
 
@@ -271,21 +276,13 @@ issue_with_key(KeyName, TokenData) ->
             {error, {key_does_not_exist, KeyName}}
     end.
 
-construct_claims(#{id := TokenID, expiration := Expiration, payload := Claims}) ->
+construct_claims(#{id := TokenID, payload := Claims}) ->
     maps:map(fun encode_claim/2, Claims#{
-        ?CLAIM_TOKEN_ID => TokenID,
-        ?CLAIM_EXPIRES_AT => Expiration
+        ?CLAIM_TOKEN_ID => TokenID
     }).
 
-encode_claim(?CLAIM_EXPIRES_AT, Expiration) ->
-    encode_expires_at(Expiration);
 encode_claim(_, Value) ->
     Value.
-
-encode_expires_at(unlimited) ->
-    0;
-encode_expires_at(Dl) ->
-    Dl.
 
 %%
 

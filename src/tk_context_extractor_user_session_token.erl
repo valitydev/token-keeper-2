@@ -20,13 +20,14 @@
 
 -define(CLAIM_USER_ID, <<"sub">>).
 -define(CLAIM_USER_EMAIL, <<"email">>).
+-define(CLAIM_EXPIRES_AT, <<"exp">>).
 
 %% API functions
 
 -spec extract_context(tk_token:token_data(), opts()) -> tk_context_extractor:extracted_context() | undefined.
-extract_context(#{id := TokenID, expiration := Expiration, payload := Payload}, Opts) ->
-    case extract_user_data(Payload) of
-        {ok, {UserID, UserEmail}} ->
+extract_context(#{id := TokenID, payload := Payload}, Opts) ->
+    case extract_payload_data(Payload) of
+        {ok, {UserID, UserEmail, Expiration}} ->
             create_context_and_metadata(TokenID, Expiration, UserID, UserEmail, Opts);
         {error, Reason} ->
             _ = logger:warning("Could not extract user_session_token context, reason: ~p", [Reason]),
@@ -45,13 +46,14 @@ create_context_and_metadata(TokenID, TokenExpiration, UserID, UserEmail, Opts) -
         )
     }.
 
-extract_user_data(#{
+extract_payload_data(#{
     ?CLAIM_USER_ID := UserID,
-    ?CLAIM_USER_EMAIL := UserEmail
+    ?CLAIM_USER_EMAIL := UserEmail,
+    ?CLAIM_EXPIRES_AT := Expiration
 }) ->
-    {ok, {UserID, UserEmail}};
-extract_user_data(Payload) ->
-    RequiredKeys = [?CLAIM_USER_ID, ?CLAIM_USER_EMAIL],
+    {ok, {UserID, UserEmail, Expiration}};
+extract_payload_data(Payload) ->
+    RequiredKeys = [?CLAIM_USER_ID, ?CLAIM_USER_EMAIL, ?CLAIM_EXPIRES_AT],
     {error, {missing, RequiredKeys -- maps:keys(Payload)}}.
 
 create_context(TokenID, TokenExpiration, UserID, UserEmail, UserRealm) ->
@@ -73,10 +75,10 @@ create_context(TokenID, TokenExpiration, UserID, UserEmail, UserRealm) ->
         Acc1
     ).
 
+make_auth_expiration(0) ->
+    undefined;
 make_auth_expiration(Timestamp) when is_integer(Timestamp) ->
-    genlib_rfc3339:format(Timestamp, second);
-make_auth_expiration(Expiration) when Expiration =:= unlimited ->
-    undefined.
+    genlib_rfc3339:format(Timestamp, second).
 
 create_metadata(UserID, UserEmail, UserRealm) ->
     #{

@@ -108,7 +108,6 @@ create_token_data(ID, #{authority_id := AuthorityID, token_type := TokenType}) -
         id => ID,
         type => TokenType,
         authority_id => AuthorityID,
-        expiration => unlimited,
         payload => #{}
     }.
 

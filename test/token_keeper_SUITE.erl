@@ -24,6 +24,7 @@
 -export([authenticate_user_session_token_no_payload_claims_fail/1]).
 -export([authenticate_phony_api_key_token_ok/1]).
 -export([authenticate_user_session_token_ok/1]).
+-export([authenticate_user_session_token_w_exp_ok/1]).
 -export([authenticate_blacklisted_jti_fail/1]).
 -export([authenticate_non_blacklisted_jti_ok/1]).
 -export([authenticate_ephemeral_claim_token_ok/1]).
@@ -87,7 +88,8 @@ groups() ->
             authenticate_no_payload_claims_fail,
             authenticate_user_session_token_no_payload_claims_fail,
             authenticate_phony_api_key_token_ok,
-            authenticate_user_session_token_ok
+            authenticate_user_session_token_ok,
+            authenticate_user_session_token_w_exp_ok
         ]},
         {ephemeral, [parallel], [
             authenticate_invalid_token_type_fail,
@@ -370,7 +372,7 @@ authenticate_user_session_token_ok(C) ->
     JTI = unique_id(),
     SubjectID = unique_id(),
     SubjectEmail = <<"test@test.test">>,
-    Claims = get_user_session_token_claims(JTI, SubjectID, SubjectEmail),
+    Claims = get_user_session_token_claims(JTI, 0, SubjectID, SubjectEmail),
     Token = issue_token(Claims, C),
     #token_keeper_AuthData{
         id = undefined,
@@ -384,7 +386,19 @@ authenticate_user_session_token_ok(C) ->
         },
         authority = ?TK_AUTHORITY_KEYCLOAK
     } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C),
-    _ = assert_context({user_session_token, JTI, SubjectID, SubjectEmail, unlimited}, Context).
+    _ = assert_context({user_session_token, JTI, SubjectID, SubjectEmail, undefined}, Context).
+
+-spec authenticate_user_session_token_w_exp_ok(config()) -> _.
+authenticate_user_session_token_w_exp_ok(C) ->
+    JTI = unique_id(),
+    SubjectID = unique_id(),
+    SubjectEmail = <<"test@test.test">>,
+    Claims = get_user_session_token_claims(JTI, 42, SubjectID, SubjectEmail),
+    Token = issue_token(Claims, C),
+    #token_keeper_AuthData{
+        context = Context
+    } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C),
+    _ = assert_context({user_session_token, JTI, SubjectID, SubjectEmail, make_auth_expiration(42)}, Context).
 
 -spec authenticate_user_session_token_no_payload_claims_fail(config()) -> _.
 authenticate_user_session_token_no_payload_claims_fail(C) ->
@@ -570,17 +584,23 @@ revoke_authdata_by_id_not_found_fail(C) ->
 
 %%
 
+make_auth_expiration(Timestamp) ->
+    genlib_rfc3339:format(Timestamp, second).
+
 get_base_claims(JTI) ->
+    get_base_claims(JTI, 0).
+
+get_base_claims(JTI, Exp) ->
     #{
         <<"jti">> => JTI,
-        <<"exp">> => 0
+        <<"exp">> => Exp
     }.
 
 get_phony_api_key_claims(JTI, SubjectID) ->
     maps:merge(#{<<"sub">> => SubjectID}, get_base_claims(JTI)).
 
-get_user_session_token_claims(JTI, SubjectID, SubjectEmail) ->
-    maps:merge(#{<<"sub">> => SubjectID, <<"email">> => SubjectEmail}, get_base_claims(JTI)).
+get_user_session_token_claims(JTI, Exp, SubjectID, SubjectEmail) ->
+    maps:merge(#{<<"sub">> => SubjectID, <<"email">> => SubjectEmail}, get_base_claims(JTI, Exp)).
 
 create_bouncer_context(JTI) ->
     bouncer_context_helpers:add_auth(
@@ -682,7 +702,7 @@ assert_auth({api_key_token, JTI, SubjectID}, Auth) ->
 assert_auth({user_session_token, JTI, _SubjectID, _SubjectEmail, Exp}, Auth) ->
     ?assertEqual(<<"SessionToken">>, Auth#bctx_v1_Auth.method),
     ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token),
-    ?assertEqual(make_auth_expiration(Exp), Auth#bctx_v1_Auth.expiration).
+    ?assertEqual(Exp, Auth#bctx_v1_Auth.expiration).
 
 assert_user({claim_token, _}, undefined) ->
     ok;
@@ -692,9 +712,6 @@ assert_user({user_session_token, _JTI, SubjectID, SubjectEmail, _Exp}, User) ->
     ?assertEqual(SubjectID, User#bctx_v1_User.id),
     ?assertEqual(SubjectEmail, User#bctx_v1_User.email),
     ?assertEqual(?CTX_ENTITY(<<"external">>), User#bctx_v1_User.realm).
-
-make_auth_expiration(unlimited) ->
-    undefined.
 
 %%
 
@@ -741,6 +758,7 @@ unique_id() ->
     genlib_format:format_int_base(ID, 62).
 
 %%
+
 start_keeper(Env) ->
     Port = 8022,
     Apps = genlib_app:start_application_with(

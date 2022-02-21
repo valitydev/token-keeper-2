@@ -19,7 +19,6 @@
 -type token_data() :: #{
     id := token_id(),
     type := token_type(),
-    expiration := expiration(),
     payload := payload(),
     authority_id := authority_id(),
     source_context => source_context()
@@ -27,7 +26,6 @@
 
 -type token_id() :: binary().
 -type token_type() :: jwt.
--type expiration() :: unlimited | non_neg_integer().
 -type payload() :: map().
 -type authority_id() :: tk_authdata:authority_id().
 -type source_context() :: #{
@@ -39,7 +37,6 @@
 
 -export_type([token_id/0]).
 -export_type([token_type/0]).
--export_type([expiration/0]).
 -export_type([payload/0]).
 -export_type([authority_id/0]).
 -export_type([source_context/0]).

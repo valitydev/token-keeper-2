@@ -67,7 +67,6 @@ create_token_data(Claims, #{authority_id := AuthorityID, token_type := TokenType
         id => unique_id(),
         type => TokenType,
         authority_id => AuthorityID,
-        expiration => unlimited,
         payload => Claims
     }.
 
