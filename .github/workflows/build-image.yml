@@ -26,7 +26,7 @@ jobs:
         run: grep -v '^#' .env >> $GITHUB_ENV
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v1.12.0
+        uses: docker/login-action@v2.0.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
