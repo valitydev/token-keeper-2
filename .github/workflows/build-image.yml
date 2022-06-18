@@ -34,7 +34,7 @@ jobs:
 
       - name: Construct tags / labels for an image
         id: meta
-        uses: docker/metadata-action@v3.6.2
+        uses: docker/metadata-action@v4.0.1
         with:
           images: |
             ${{ env.REGISTRY }}/${{ github.repository }}
