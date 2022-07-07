@@ -19,4 +19,3 @@ jobs:
         with:
           registry-username: ${{ github.actor }}
           registry-access-token: ${{ secrets.GITHUB_TOKEN }}
-          use-env-buildargs: false
