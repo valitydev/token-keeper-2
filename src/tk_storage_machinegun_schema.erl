@@ -120,7 +120,7 @@ deserialize(Type, Data) ->
 -spec marshal_unmarshal_status_changed_test() -> _.
 
 -define(CONTEXT, #{
-    machine_ref => <<"TEST">>,
+    machine_id => <<"TEST">>,
     machine_ns => test
 }).
 
