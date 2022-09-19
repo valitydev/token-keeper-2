@@ -54,7 +54,7 @@ make_auth_data(ContextFragment, Metadata) ->
     }).
 
 encode_context_fragment(ContextFragment) ->
-    #bctx_ContextFragment{
+    #bouncer_ctx_ContextFragment{
         type = v1_thrift_binary,
         content = encode_context_fragment_content(ContextFragment)
     }.

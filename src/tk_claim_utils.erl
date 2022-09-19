@@ -58,7 +58,7 @@ decode_bouncer_claim(#{
     ?CLAIM_CTX_CONTEXT := Content
 }) ->
     try
-        {ok, #bctx_ContextFragment{
+        {ok, #bouncer_ctx_ContextFragment{
             type = v1_thrift_binary,
             content = base64:decode(Content)
         }}
@@ -73,7 +73,7 @@ decode_bouncer_claim(Ctx) ->
 
 -spec encode_bouncer_claim(encoded_context_fragment()) -> claims().
 encode_bouncer_claim(
-    #bctx_ContextFragment{
+    #bouncer_ctx_ContextFragment{
         type = v1_thrift_binary,
         content = Content
     }
