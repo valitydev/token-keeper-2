@@ -129,7 +129,7 @@ marshal_unmarshal_created_test() ->
         {created, #tk_events_AuthDataCreated{
             id = <<"TEST">>,
             status = active,
-            context = #bctx_ContextFragment{type = v1_thrift_binary, content = <<"STUFF">>},
+            context = #bouncer_ctx_ContextFragment{type = v1_thrift_binary, content = <<"STUFF">>},
             metadata = #{}
         }},
     {Marshaled, _} = marshal_event(1, Event, ?CONTEXT),

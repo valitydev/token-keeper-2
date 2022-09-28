@@ -28,15 +28,14 @@
 
 -spec extract_context(tk_token:token_data(), opts()) -> tk_context_extractor:extracted_context() | undefined.
 extract_context(TokenData, Opts) ->
-    maybe
-        {ok, AuthParams} ?= extract_auth_params(TokenData),
-        {ok, UserParams0} ?= extract_user_params(TokenData),
-        UserParams = add_user_realm(UserParams0, Opts),
+    try
+        AuthParams = extract_auth_params(TokenData),
+        UserParams = add_user_realm(extract_user_params(TokenData), Opts),
         Context = create_context(UserParams, AuthParams),
-        Metadata = wrap_metadata(create_metadata(UserParams), Opts),
-        {Context, Metadata}
-    else
-        {error, Reason} ->
+        Metadata = create_metadata(UserParams),
+        {Context, wrap_metadata(Metadata, Opts)}
+    catch
+        throw:Reason ->
             _ = logger:warning("Could not extract user_session_token context, reason: ~p", [Reason]),
             undefined
     end.
@@ -48,16 +47,16 @@ extract_user_params(#{
         ?CLAIM_USER_EMAIL := UserEmail
     }
 }) ->
-    {ok, #{
+    #{
         id => UserID,
         email => UserEmail
-    }};
+    };
 extract_user_params(TokenData) ->
     RequiredKeys = [
         ?CLAIM_USER_ID,
         ?CLAIM_USER_EMAIL
     ],
-    {error, {missing, RequiredKeys -- maps:keys(TokenData)}}.
+    throw({missing, RequiredKeys -- maps:keys(TokenData)}).
 
 extract_auth_params(#{
     id := TokenID,
@@ -65,17 +64,16 @@ extract_auth_params(#{
         ?CLAIM_EXPIRES_AT := TokenExp
     } = Payload
 }) ->
-    {ok,
-        genlib_map:compact(#{
-            token_id => TokenID,
-            token_exp => TokenExp,
-            resource_access => genlib_map:get(?CLAIM_RESOURCE_ACCESS, Payload)
-        })};
+    genlib_map:compact(#{
+        token_id => TokenID,
+        token_exp => TokenExp,
+        resource_access => genlib_map:get(?CLAIM_RESOURCE_ACCESS, Payload)
+    });
 extract_auth_params(TokenData) ->
     RequiredKeys = [
         ?CLAIM_EXPIRES_AT
     ],
-    {error, {missing, RequiredKeys -- maps:keys(TokenData)}}.
+    throw({missing, RequiredKeys -- maps:keys(TokenData)}).
 
 add_user_realm(UserParams, Opts) ->
     UserParams#{realm => maps:get(user_realm, Opts)}.
@@ -86,17 +84,24 @@ create_context(UserParams, AuthParams) ->
     append_auth_context(AuthParams, Acc1).
 
 append_user_context(UserParams, BouncerCtx) ->
-    bouncer_context_helpers:add_user(UserParams, BouncerCtx).
+    bouncer_context_helpers:add_user(
+        #{
+            id => maps:get(id, UserParams),
+            email => maps:get(email, UserParams),
+            realm => #{id => maps:get(realm, UserParams)}
+        },
+        BouncerCtx
+    ).
 
 append_auth_context(AuthParams, BouncerCtx) ->
     bouncer_context_helpers:add_auth(
         #{
             method => <<"SessionToken">>,
             expiration => make_auth_expiration(maps:get(token_exp, AuthParams)),
-            token => #{
+            token => genlib_map:compact(#{
                 id => maps:get(token_id, AuthParams),
-                access => make_auth_access_list(maps:get(resource_access, AuthParams))
-            }
+                access => maybe_auth_access_list(AuthParams)
+            })
         },
         BouncerCtx
     ).
@@ -106,18 +111,20 @@ make_auth_expiration(0) ->
 make_auth_expiration(Timestamp) when is_integer(Timestamp) ->
     genlib_rfc3339:format(Timestamp, second).
 
-make_auth_access_list(ResourceAccess) ->
+maybe_auth_access_list(#{resource_access := ResourceAccess}) ->
     maps:fold(
         fun(Key, Value, Acc) ->
             Entry = #{
                 id => Key,
-                roles => maps:get(roles, Value)
+                roles => maps:get(<<"roles">>, Value)
             },
             [Entry | Acc]
         end,
         [],
         ResourceAccess
-    ).
+    );
+maybe_auth_access_list(_) ->
+    undefined.
 
 create_metadata(UserParams) ->
     #{
