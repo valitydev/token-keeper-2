@@ -25,6 +25,7 @@
 -export([authenticate_phony_api_key_token_ok/1]).
 -export([authenticate_user_session_token_ok/1]).
 -export([authenticate_user_session_token_w_exp_ok/1]).
+-export([authenticate_user_session_token_no_exp_fail/1]).
 -export([authenticate_user_session_token_w_resource_access/1]).
 -export([authenticate_blacklisted_jti_fail/1]).
 -export([authenticate_non_blacklisted_jti_ok/1]).
@@ -91,6 +92,7 @@ groups() ->
             authenticate_phony_api_key_token_ok,
             authenticate_user_session_token_ok,
             authenticate_user_session_token_w_exp_ok,
+            authenticate_user_session_token_no_exp_fail,
             authenticate_user_session_token_w_resource_access
         ]},
         {ephemeral, [parallel], [
@@ -390,6 +392,18 @@ authenticate_user_session_token_ok(C) ->
     } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C),
     _ = assert_context(
         {user_session_token, #{jti => JTI, subject_id => SubjectID, subject_email => SubjectEmail}}, Context
+    ).
+
+-spec authenticate_user_session_token_no_exp_fail(config()) -> _.
+authenticate_user_session_token_no_exp_fail(C) ->
+    JTI = unique_id(),
+    SubjectID = unique_id(),
+    SubjectEmail = <<"test@test.test">>,
+    Claims = get_user_session_token_claims(JTI, 0, SubjectID, SubjectEmail),
+    Token = issue_token(maps:remove(<<"exp">>, Claims), C),
+    ?assertThrow(
+        #token_keeper_AuthDataNotFound{},
+        call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C)
     ).
 
 -spec authenticate_user_session_token_w_exp_ok(config()) -> _.
