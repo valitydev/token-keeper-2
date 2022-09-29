@@ -14,7 +14,7 @@
 
 -type id() :: binary().
 -type status() :: active | revoked.
--type encoded_context_fragment() :: tk_context_thrift:'ContextFragment'().
+-type encoded_context_fragment() :: tk_token_keeper_thrift:'ContextFragment'().
 -type authority_id() :: binary().
 -type metadata() :: #{binary() => binary()}.
 

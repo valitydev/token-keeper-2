@@ -4,7 +4,7 @@
 -include_lib("stdlib/include/assert.hrl").
 
 -include_lib("token_keeper_proto/include/tk_token_keeper_thrift.hrl").
--include_lib("token_keeper_proto/include/tk_context_thrift.hrl").
+-include_lib("bouncer_proto/include/bouncer_ctx_thrift.hrl").
 
 -include_lib("bouncer_proto/include/bouncer_base_thrift.hrl").
 -include_lib("bouncer_proto/include/bouncer_ctx_v1_thrift.hrl").
@@ -391,7 +391,8 @@ authenticate_user_session_token_ok(C) ->
         authority = ?TK_AUTHORITY_KEYCLOAK
     } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C),
     _ = assert_context(
-        {user_session_token, #{jti => JTI, subject_id => SubjectID, subject_email => SubjectEmail}}, Context
+        {user_session_token, #{jti => JTI, subject_id => SubjectID, subject_email => SubjectEmail}},
+        Context
     ).
 
 -spec authenticate_user_session_token_no_exp_fail(config()) -> _.
@@ -674,7 +675,7 @@ create_bouncer_context(JTI) ->
 
 create_encoded_bouncer_context(JTI) ->
     Fragment = create_bouncer_context(JTI),
-    #bouncer_ctx_ContextFragment{
+    #ctx_ContextFragment{
         type = v1_thrift_binary,
         content = encode_context_fragment_content(Fragment)
     }.
@@ -742,7 +743,7 @@ encode_context_fragment_content(ContextFragment) ->
             thrift_strict_binary_codec:close(Codec1)
     end.
 
-decode_bouncer_fragment(#bouncer_ctx_ContextFragment{type = v1_thrift_binary, content = Content}) ->
+decode_bouncer_fragment(#ctx_ContextFragment{type = v1_thrift_binary, content = Content}) ->
     Type = {struct, struct, {bouncer_ctx_v1_thrift, 'ContextFragment'}},
     Codec = thrift_strict_binary_codec:new(Content),
     {ok, Fragment, _} = thrift_strict_binary_codec:read(Codec, Type),
