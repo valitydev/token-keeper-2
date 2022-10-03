@@ -113,6 +113,7 @@ deserialize(Type, Data) ->
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("token_keeper_proto/include/tk_events_thrift.hrl").
+-include_lib("bouncer_proto/include/bouncer_ctx_thrift.hrl").
 
 -spec test() -> _.
 
@@ -126,10 +127,10 @@ deserialize(Type, Data) ->
 
 marshal_unmarshal_created_test() ->
     Event =
-        {created, #tk_events_AuthDataCreated{
+        {created, #events_AuthDataCreated{
             id = <<"TEST">>,
             status = active,
-            context = #bctx_ContextFragment{type = v1_thrift_binary, content = <<"STUFF">>},
+            context = #ctx_ContextFragment{type = v1_thrift_binary, content = <<"STUFF">>},
             metadata = #{}
         }},
     {Marshaled, _} = marshal_event(1, Event, ?CONTEXT),
@@ -138,7 +139,7 @@ marshal_unmarshal_created_test() ->
 
 marshal_unmarshal_status_changed_test() ->
     Event =
-        {status_changed, #tk_events_AuthDataStatusChanged{
+        {status_changed, #events_AuthDataStatusChanged{
             status = revoked
         }},
     {Marshaled, _} = marshal_event(1, Event, ?CONTEXT),

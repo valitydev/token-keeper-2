@@ -1,7 +1,7 @@
 -module(tk_authdata_source_context_extractor).
 -behaviour(tk_authdata_source).
 
--include_lib("token_keeper_proto/include/tk_context_thrift.hrl").
+-include_lib("bouncer_proto/include/bouncer_ctx_thrift.hrl").
 
 %% Behaviour
 
@@ -54,13 +54,13 @@ make_auth_data(ContextFragment, Metadata) ->
     }).
 
 encode_context_fragment(ContextFragment) ->
-    #bctx_ContextFragment{
+    #ctx_ContextFragment{
         type = v1_thrift_binary,
         content = encode_context_fragment_content(ContextFragment)
     }.
 
 encode_context_fragment_content(ContextFragment) ->
-    Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
+    Type = {struct, struct, {bouncer_ctx_v1_thrift, 'ContextFragment'}},
     Codec = thrift_strict_binary_codec:new(),
     case thrift_strict_binary_codec:write(Codec, Type, ContextFragment) of
         {ok, Codec1} ->

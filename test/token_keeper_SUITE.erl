@@ -4,10 +4,10 @@
 -include_lib("stdlib/include/assert.hrl").
 
 -include_lib("token_keeper_proto/include/tk_token_keeper_thrift.hrl").
--include_lib("token_keeper_proto/include/tk_context_thrift.hrl").
+-include_lib("bouncer_proto/include/bouncer_ctx_thrift.hrl").
 
 -include_lib("bouncer_proto/include/bouncer_base_thrift.hrl").
--include_lib("bouncer_proto/include/bouncer_context_v1_thrift.hrl").
+-include_lib("bouncer_proto/include/bouncer_ctx_v1_thrift.hrl").
 
 -export([all/0]).
 -export([groups/0]).
@@ -25,6 +25,8 @@
 -export([authenticate_phony_api_key_token_ok/1]).
 -export([authenticate_user_session_token_ok/1]).
 -export([authenticate_user_session_token_w_exp_ok/1]).
+-export([authenticate_user_session_token_no_exp_fail/1]).
+-export([authenticate_user_session_token_w_resource_access/1]).
 -export([authenticate_blacklisted_jti_fail/1]).
 -export([authenticate_non_blacklisted_jti_ok/1]).
 -export([authenticate_ephemeral_claim_token_ok/1]).
@@ -89,7 +91,9 @@ groups() ->
             authenticate_user_session_token_no_payload_claims_fail,
             authenticate_phony_api_key_token_ok,
             authenticate_user_session_token_ok,
-            authenticate_user_session_token_w_exp_ok
+            authenticate_user_session_token_w_exp_ok,
+            authenticate_user_session_token_no_exp_fail,
+            authenticate_user_session_token_w_resource_access
         ]},
         {ephemeral, [parallel], [
             authenticate_invalid_token_type_fail,
@@ -365,7 +369,7 @@ authenticate_phony_api_key_token_ok(C) ->
         metadata = #{?META_PARTY_ID := SubjectID},
         authority = ?TK_AUTHORITY_KEYCLOAK
     } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C),
-    _ = assert_context({api_key_token, JTI, SubjectID}, Context).
+    _ = assert_context({api_key_token, #{jti => JTI, subject_id => SubjectID}}, Context).
 
 -spec authenticate_user_session_token_ok(config()) -> _.
 authenticate_user_session_token_ok(C) ->
@@ -386,7 +390,22 @@ authenticate_user_session_token_ok(C) ->
         },
         authority = ?TK_AUTHORITY_KEYCLOAK
     } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C),
-    _ = assert_context({user_session_token, JTI, SubjectID, SubjectEmail, undefined}, Context).
+    _ = assert_context(
+        {user_session_token, #{jti => JTI, subject_id => SubjectID, subject_email => SubjectEmail}},
+        Context
+    ).
+
+-spec authenticate_user_session_token_no_exp_fail(config()) -> _.
+authenticate_user_session_token_no_exp_fail(C) ->
+    JTI = unique_id(),
+    SubjectID = unique_id(),
+    SubjectEmail = <<"test@test.test">>,
+    Claims = get_user_session_token_claims(JTI, 0, SubjectID, SubjectEmail),
+    Token = issue_token(maps:remove(<<"exp">>, Claims), C),
+    ?assertThrow(
+        #token_keeper_AuthDataNotFound{},
+        call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C)
+    ).
 
 -spec authenticate_user_session_token_w_exp_ok(config()) -> _.
 authenticate_user_session_token_w_exp_ok(C) ->
@@ -398,7 +417,40 @@ authenticate_user_session_token_w_exp_ok(C) ->
     #token_keeper_AuthData{
         context = Context
     } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C),
-    _ = assert_context({user_session_token, JTI, SubjectID, SubjectEmail, make_auth_expiration(42)}, Context).
+    _ = assert_context(
+        {user_session_token, #{
+            jti => JTI, subject_id => SubjectID, subject_email => SubjectEmail, exp => make_auth_expiration(42)
+        }},
+        Context
+    ).
+
+-spec authenticate_user_session_token_w_resource_access(config()) -> _.
+authenticate_user_session_token_w_resource_access(C) ->
+    JTI = unique_id(),
+    SubjectID = unique_id(),
+    SubjectEmail = <<"test@test.test">>,
+    ResourceAccess = #{
+        <<"api.test">> => #{
+            <<"roles">> => [<<"do.nothing">>]
+        }
+    },
+    Claims = get_user_session_token_claims(JTI, 42, SubjectID, SubjectEmail, ResourceAccess),
+    Token = issue_token(Claims, C),
+    #token_keeper_AuthData{
+        context = Context
+    } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT(?USER_TOKEN_SOURCE), C),
+    _ = assert_context(
+        {user_session_token, #{
+            jti => JTI,
+            subject_id => SubjectID,
+            subject_email => SubjectEmail,
+            exp => make_auth_expiration(42),
+            access => [
+                {<<"api.test">>, [<<"do.nothing">>]}
+            ]
+        }},
+        Context
+    ).
 
 -spec authenticate_user_session_token_no_payload_claims_fail(config()) -> _.
 authenticate_user_session_token_no_payload_claims_fail(C) ->
@@ -447,7 +499,7 @@ authenticate_ephemeral_claim_token_ok(C) ->
         metadata = Metadata,
         authority = AuthorityID
     } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C),
-    _ = assert_context({claim_token, JTI}, Context).
+    _ = assert_context({claim_token, #{jti => JTI}}, Context).
 
 -spec issue_ephemeral_token_ok(config()) -> _.
 issue_ephemeral_token_ok(C) ->
@@ -503,7 +555,7 @@ authenticate_offline_token_ok(C) ->
         metadata = Metadata,
         authority = AuthorityID
     } = call_authenticate(Token, ?TOKEN_SOURCE_CONTEXT, C),
-    _ = assert_context({claim_token, JTI}, Context).
+    _ = assert_context({claim_token, #{jti => JTI}}, Context).
 
 -spec issue_offline_token_ok(config()) -> _.
 issue_offline_token_ok(C) ->
@@ -600,7 +652,17 @@ get_phony_api_key_claims(JTI, SubjectID) ->
     maps:merge(#{<<"sub">> => SubjectID}, get_base_claims(JTI)).
 
 get_user_session_token_claims(JTI, Exp, SubjectID, SubjectEmail) ->
-    maps:merge(#{<<"sub">> => SubjectID, <<"email">> => SubjectEmail}, get_base_claims(JTI, Exp)).
+    get_user_session_token_claims(JTI, Exp, SubjectID, SubjectEmail, undefined).
+
+get_user_session_token_claims(JTI, Exp, SubjectID, SubjectEmail, ResourceAccess) ->
+    maps:merge(
+        genlib_map:compact(#{
+            <<"sub">> => SubjectID,
+            <<"email">> => SubjectEmail,
+            <<"resource_access">> => ResourceAccess
+        }),
+        get_base_claims(JTI, Exp)
+    ).
 
 create_bouncer_context(JTI) ->
     bouncer_context_helpers:add_auth(
@@ -613,7 +675,7 @@ create_bouncer_context(JTI) ->
 
 create_encoded_bouncer_context(JTI) ->
     Fragment = create_bouncer_context(JTI),
-    #bctx_ContextFragment{
+    #ctx_ContextFragment{
         type = v1_thrift_binary,
         content = encode_context_fragment_content(Fragment)
     }.
@@ -671,47 +733,61 @@ get_service_spec({token_ephemeral_authority, _}) ->
 
 %%
 
--define(CTX_ENTITY(ID), #bouncer_base_Entity{id = ID}).
+-define(CTX_ENTITY(ID), #base_Entity{id = ID}).
 
 encode_context_fragment_content(ContextFragment) ->
-    Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
+    Type = {struct, struct, {bouncer_ctx_v1_thrift, 'ContextFragment'}},
     Codec = thrift_strict_binary_codec:new(),
     case thrift_strict_binary_codec:write(Codec, Type, ContextFragment) of
         {ok, Codec1} ->
             thrift_strict_binary_codec:close(Codec1)
     end.
 
-decode_bouncer_fragment(#bctx_ContextFragment{type = v1_thrift_binary, content = Content}) ->
-    Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
+decode_bouncer_fragment(#ctx_ContextFragment{type = v1_thrift_binary, content = Content}) ->
+    Type = {struct, struct, {bouncer_ctx_v1_thrift, 'ContextFragment'}},
     Codec = thrift_strict_binary_codec:new(Content),
     {ok, Fragment, _} = thrift_strict_binary_codec:read(Codec, Type),
     Fragment.
 
 assert_context(TokenInfo, EncodedContextFragment) ->
-    #bctx_v1_ContextFragment{auth = Auth, user = User} = decode_bouncer_fragment(EncodedContextFragment),
+    #ctx_v1_ContextFragment{auth = Auth, user = User} = decode_bouncer_fragment(EncodedContextFragment),
     _ = assert_auth(TokenInfo, Auth),
     _ = assert_user(TokenInfo, User).
 
-assert_auth({claim_token, JTI}, Auth) ->
-    ?assertEqual(<<"ClaimToken">>, Auth#bctx_v1_Auth.method),
-    ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token);
-assert_auth({api_key_token, JTI, SubjectID}, Auth) ->
-    ?assertEqual(<<"ApiKeyToken">>, Auth#bctx_v1_Auth.method),
-    ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token),
-    ?assertMatch([#bctx_v1_AuthScope{party = ?CTX_ENTITY(SubjectID)}], Auth#bctx_v1_Auth.scope);
-assert_auth({user_session_token, JTI, _SubjectID, _SubjectEmail, Exp}, Auth) ->
-    ?assertEqual(<<"SessionToken">>, Auth#bctx_v1_Auth.method),
-    ?assertMatch(#bctx_v1_Token{id = JTI}, Auth#bctx_v1_Auth.token),
-    ?assertEqual(Exp, Auth#bctx_v1_Auth.expiration).
+assert_auth({claim_token, #{jti := JTI}}, Auth) ->
+    ?assertEqual(<<"ClaimToken">>, Auth#ctx_v1_Auth.method),
+    ?assertMatch(#ctx_v1_Token{id = JTI}, Auth#ctx_v1_Auth.token);
+assert_auth({api_key_token, #{jti := JTI, subject_id := SubjectID}}, Auth) ->
+    ?assertEqual(<<"ApiKeyToken">>, Auth#ctx_v1_Auth.method),
+    ?assertMatch(#ctx_v1_Token{id = JTI}, Auth#ctx_v1_Auth.token),
+    ?assertMatch([#ctx_v1_AuthScope{party = ?CTX_ENTITY(SubjectID)}], Auth#ctx_v1_Auth.scope);
+assert_auth({user_session_token, #{jti := JTI} = TokenInfo}, Auth) ->
+    ?assertEqual(<<"SessionToken">>, Auth#ctx_v1_Auth.method),
+    Exp = maps:get(exp, TokenInfo, undefined),
+    Access =
+        case maps:get(access, TokenInfo, undefined) of
+            undefined ->
+                undefined;
+            AccessList ->
+                [
+                    #ctx_v1_ResourceAccess{
+                        id = ID,
+                        roles = Roles
+                    }
+                 || {ID, Roles} <- AccessList
+                ]
+        end,
+    ?assertMatch(#ctx_v1_Token{id = JTI, access = Access}, Auth#ctx_v1_Auth.token),
+    ?assertEqual(Exp, Auth#ctx_v1_Auth.expiration).
 
 assert_user({claim_token, _}, undefined) ->
     ok;
-assert_user({api_key_token, _, _}, undefined) ->
+assert_user({api_key_token, _}, undefined) ->
     ok;
-assert_user({user_session_token, _JTI, SubjectID, SubjectEmail, _Exp}, User) ->
-    ?assertEqual(SubjectID, User#bctx_v1_User.id),
-    ?assertEqual(SubjectEmail, User#bctx_v1_User.email),
-    ?assertEqual(?CTX_ENTITY(<<"external">>), User#bctx_v1_User.realm).
+assert_user({user_session_token, #{subject_id := SubjectID, subject_email := SubjectEmail}}, User) ->
+    ?assertEqual(SubjectID, User#ctx_v1_User.id),
+    ?assertEqual(SubjectEmail, User#ctx_v1_User.email),
+    ?assertEqual(?CTX_ENTITY(<<"external">>), User#ctx_v1_User.realm).
 
 %%
 

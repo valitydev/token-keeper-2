@@ -1,6 +1,6 @@
 -module(tk_handler_authenticator).
 
--include_lib("token_keeper_proto/include/tk_context_thrift.hrl").
+-include_lib("bouncer_proto/include/bouncer_ctx_thrift.hrl").
 -include_lib("token_keeper_proto/include/tk_token_keeper_thrift.hrl").
 
 -export([get_handler_spec/1]).

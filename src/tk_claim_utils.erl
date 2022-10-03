@@ -1,6 +1,6 @@
 -module(tk_claim_utils).
 
--include_lib("token_keeper_proto/include/tk_context_thrift.hrl").
+-include_lib("bouncer_proto/include/bouncer_ctx_thrift.hrl").
 
 -export([decode_authdata/1]).
 -export([encode_authdata/1]).
@@ -11,7 +11,7 @@
 %%
 
 -type authdata() :: tk_authdata:prototype().
--type encoded_context_fragment() :: tk_context_thrift:'ContextFragment'().
+-type encoded_context_fragment() :: tk_token_keeper_thrift:'ContextFragment'().
 
 -type claim() :: term().
 -type claims() :: tk_token:payload().
@@ -58,7 +58,7 @@ decode_bouncer_claim(#{
     ?CLAIM_CTX_CONTEXT := Content
 }) ->
     try
-        {ok, #bctx_ContextFragment{
+        {ok, #ctx_ContextFragment{
             type = v1_thrift_binary,
             content = base64:decode(Content)
         }}
@@ -73,7 +73,7 @@ decode_bouncer_claim(Ctx) ->
 
 -spec encode_bouncer_claim(encoded_context_fragment()) -> claims().
 encode_bouncer_claim(
-    #bctx_ContextFragment{
+    #ctx_ContextFragment{
         type = v1_thrift_binary,
         content = Content
     }

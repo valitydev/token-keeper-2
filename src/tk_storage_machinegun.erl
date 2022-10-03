@@ -15,6 +15,7 @@
 -export([process_repair/4]).
 -export([process_timeout/3]).
 -export([process_call/4]).
+-export([process_notification/4]).
 
 -type storage_opts() :: #{
     namespace := namespace(),
@@ -108,12 +109,16 @@ process_call(revoke, #{history := History}, _, _) ->
     Events = change_status(revoked, AuthData),
     {ok, #{events => Events}}.
 
+-spec process_notification(machinery:args(_), machine(), handler_args(), handler_opts()) -> no_return().
+process_notification(_Args, _Machine, _, _) ->
+    erlang:error({not_implemented, process_notification}).
+
 %%-------------------------------------
 %% internal
 
 create_authdata(AuthData) ->
     [
-        {created, #tk_events_AuthDataCreated{
+        {created, #events_AuthDataCreated{
             id = maps:get(id, AuthData),
             status = maps:get(status, AuthData),
             context = maps:get(context, AuthData),
@@ -124,7 +129,7 @@ create_authdata(AuthData) ->
 change_status(NewStatus, #{status := NewStatus}) ->
     [];
 change_status(NewStatus, #{status := _OtherStatus}) ->
-    [{status_changed, #tk_events_AuthDataStatusChanged{status = NewStatus}}].
+    [{status_changed, #events_AuthDataStatusChanged{status = NewStatus}}].
 
 %%
 
@@ -158,8 +163,8 @@ collapse_history(History) ->
 collapse_history([], AuthData) when AuthData =/= undefined ->
     AuthData;
 collapse_history([{_, _, {created, AuthData}} | Rest], undefined) ->
-    #tk_events_AuthDataCreated{id = ID, context = Ctx, status = Status, metadata = Meta} = AuthData,
+    #events_AuthDataCreated{id = ID, context = Ctx, status = Status, metadata = Meta} = AuthData,
     collapse_history(Rest, #{id => ID, context => Ctx, status => Status, metadata => Meta});
 collapse_history([{_, _, {status_changed, StatusChanged}} | Rest], AuthData) when AuthData =/= undefined ->
-    #tk_events_AuthDataStatusChanged{status = Status} = StatusChanged,
+    #events_AuthDataStatusChanged{status = Status} = StatusChanged,
     collapse_history(Rest, AuthData#{status => Status}).
