@@ -112,7 +112,7 @@ make_auth_expiration(Timestamp) when is_integer(Timestamp) ->
     genlib_rfc3339:format(Timestamp, second).
 
 maybe_auth_access_list(#{resource_access := ResourceAccess}) ->
-    List = maps:fold(
+    maps:fold(
         fun(Key, Value, Acc) ->
             ordsets:add_element(
                 #{
@@ -124,8 +124,7 @@ maybe_auth_access_list(#{resource_access := ResourceAccess}) ->
         end,
         ordsets:new(),
         ResourceAccess
-    ),
-    ordsets:from_list(List);
+    );
 maybe_auth_access_list(_) ->
     undefined.
 
