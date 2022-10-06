@@ -431,7 +431,7 @@ authenticate_user_session_token_w_resource_access(C) ->
     SubjectEmail = <<"test@test.test">>,
     ResourceAccess = #{
         <<"api.2">> => #{
-            <<"roles">> => [<<"do.nothing">>]
+            <<"roles">> => [<<"do.2">>, <<"do.1">>]
         },
         <<"api.1">> => #{
             <<"roles">> => [<<"do.something">>]
@@ -450,7 +450,7 @@ authenticate_user_session_token_w_resource_access(C) ->
             exp => make_auth_expiration(42),
             access => [
                 {<<"api.1">>, [<<"do.something">>]},
-                {<<"api.2">>, [<<"do.nothing">>]}
+                {<<"api.2">>, [<<"do.1">>, <<"do.2">>]}
             ]
         }},
         Context
