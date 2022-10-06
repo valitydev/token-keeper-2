@@ -430,8 +430,11 @@ authenticate_user_session_token_w_resource_access(C) ->
     SubjectID = unique_id(),
     SubjectEmail = <<"test@test.test">>,
     ResourceAccess = #{
-        <<"api.test">> => #{
+        <<"api.2">> => #{
             <<"roles">> => [<<"do.nothing">>]
+        },
+        <<"api.1">> => #{
+            <<"roles">> => [<<"do.something">>]
         }
     },
     Claims = get_user_session_token_claims(JTI, 42, SubjectID, SubjectEmail, ResourceAccess),
@@ -446,7 +449,8 @@ authenticate_user_session_token_w_resource_access(C) ->
             subject_email => SubjectEmail,
             exp => make_auth_expiration(42),
             access => [
-                {<<"api.test">>, [<<"do.nothing">>]}
+                {<<"api.1">>, [<<"do.something">>]},
+                {<<"api.2">>, [<<"do.nothing">>]}
             ]
         }},
         Context

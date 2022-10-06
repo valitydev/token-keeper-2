@@ -114,13 +114,15 @@ make_auth_expiration(Timestamp) when is_integer(Timestamp) ->
 maybe_auth_access_list(#{resource_access := ResourceAccess}) ->
     maps:fold(
         fun(Key, Value, Acc) ->
-            Entry = #{
-                id => Key,
-                roles => maps:get(<<"roles">>, Value)
-            },
-            [Entry | Acc]
+            ordsets:add_element(
+                #{
+                    id => Key,
+                    roles => maps:get(<<"roles">>, Value)
+                },
+                Acc
+            )
         end,
-        [],
+        ordsets:new(),
         ResourceAccess
     );
 maybe_auth_access_list(_) ->
