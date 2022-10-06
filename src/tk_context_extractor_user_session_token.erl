@@ -117,7 +117,7 @@ maybe_auth_access_list(#{resource_access := ResourceAccess}) ->
             ordsets:add_element(
                 #{
                     id => Key,
-                    roles => maps:get(<<"roles">>, Value)
+                    roles => ordsets:from_list(maps:get(<<"roles">>, Value))
                 },
                 Acc
             )
