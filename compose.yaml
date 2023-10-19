@@ -16,7 +16,7 @@ services:
     working_dir: $PWD
     command: /sbin/init
 
-    machinegun:
+  machinegun:
     image: ghcr.io/valitydev/machinegun:sha-46005f8-epic-opentelemetry_adoption
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
