@@ -14,7 +14,10 @@
         bouncer_client,
         erl_health,
         machinery,
-        yamerl
+        yamerl,
+        opentelemetry_api,
+        opentelemetry_exporter,
+        opentelemetry
     ]},
     {env, []},
     {modules, []},
