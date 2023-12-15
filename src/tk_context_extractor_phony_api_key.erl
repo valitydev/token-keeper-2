@@ -27,7 +27,9 @@ extract_context(#{id := TokenID, payload := Payload} = TokenData, Opts) ->
                 ok ->
                     create_context_and_metadata(TokenID, PartyID, Opts);
                 {error, blacklisted} ->
-                    _ = logger:warning("phony_api_key context was extract, but it blacklisted for user id: ~p", [PartyID]),
+                    _ = logger:warning("phony_api_key context was extract, but it blacklisted for user id: ~p", [
+                        PartyID
+                    ]),
                     undefined
             end;
         {error, Reason} ->
